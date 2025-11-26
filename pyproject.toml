@@ -1,7 +1,7 @@
 [project]
-name = "anibridge-example-provider"
+name = "anibridge-anilist-provider"
 version = "0.1.0"
-description = "Example provider for the AniBridge project."
+description = "AniList provider for the AniBridge project."
 readme = "README.md"
 requires-python = ">=3.14"
 
@@ -20,12 +20,15 @@ classifiers = [
 ]
 
 dependencies = [
-    "anibridge-library-interface @ git+https://github.com/anibridge/anibridge-library-interface.git",
+    "aiohttp>=3.13.2",
     "anibridge-list-interface @ git+https://github.com/anibridge/anibridge-list-interface.git",
+    "async-lru>=2.0.5",
+    "limiter>=0.5.0",
+    "pydantic>=2.12.4",
 ]
 
 [tool.hatch.build]
-packages = ["src/anibridge_example_provider"]
+packages = ["src/anibridge_anilist_provider"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
