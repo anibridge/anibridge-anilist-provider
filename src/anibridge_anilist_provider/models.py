@@ -233,7 +233,7 @@ class User(AniListBaseModel):
     id: int
     name: str
     media_list_options: MediaListOptions | None = None
-    user_options: UserOptions | None = None
+    options: UserOptions | None = None
 
 
 class MediaTitle(AniListBaseModel):

@@ -116,7 +116,7 @@ async def test_initialize_parses_user_timezone_offset(client: AniListClient):
     # timezone without a sign should be treated as positive
     client.get_user = AsyncMock(
         return_value=User.model_construct(
-            id=1, name="tz", user_options=UserOptions(timezone="02:30")
+            id=1, name="tz", options=UserOptions(timezone="02:30")
         )
     )
 
@@ -127,7 +127,7 @@ async def test_initialize_parses_user_timezone_offset(client: AniListClient):
     # negative offsets should also be parsed correctly
     client.get_user = AsyncMock(
         return_value=User.model_construct(
-            id=1, name="tz", user_options=UserOptions(timezone="-05:00")
+            id=1, name="tz", options=UserOptions(timezone="-05:00")
         )
     )
     await client.initialize()

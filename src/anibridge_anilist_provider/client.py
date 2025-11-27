@@ -96,7 +96,7 @@ class AniListClient:
         self.user = await self.get_user()
 
         # Timezone in "-?HH:MM" format
-        offset_str = self.user.user_options.timezone if self.user.user_options else None
+        offset_str = self.user.options.timezone if self.user.options else None
         if offset_str:
             if offset_str[0] not in "+-":
                 offset_str = "+" + offset_str
