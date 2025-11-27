@@ -39,15 +39,11 @@ class AnilistListProvider(ListProvider):
         """
         self.config = config or {}
         token = self.config.get("token")
-        profile_name = self.config.get("profile_name", "default")
 
         if not token:
             raise ValueError("AniList token must be provided in the configuration")
 
-        self._client = AnilistClient(
-            anilist_token=token,
-            profile_name=profile_name,
-        )
+        self._client = AnilistClient(anilist_token=token)
 
         self._user: ListUser | None = None
         self._score_format: ScoreFormat | None = None

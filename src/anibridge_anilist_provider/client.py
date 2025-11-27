@@ -44,11 +44,7 @@ class AnilistClient:
 
     API_URL = "https://graphql.anilist.co"
 
-    def __init__(
-        self,
-        anilist_token: str,
-        profile_name: str | None,
-    ) -> None:
+    def __init__(self, anilist_token: str) -> None:
         """Initialize the AniList client.
 
         Args:
@@ -58,7 +54,6 @@ class AnilistClient:
                 defaults to BACKUP_RETENTION_DAYS when None.
         """
         self.anilist_token = anilist_token
-        self.profile_name = profile_name or "public"
         self._session: aiohttp.ClientSession | None = None
 
         self.user: User | None = None
