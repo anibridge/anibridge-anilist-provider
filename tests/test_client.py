@@ -1,4 +1,4 @@
-"""Unit tests focusing on the AniListClient helper behaviors."""
+"""Unit tests focusing on the AnilistClient helper behaviors."""
 
 import asyncio
 import json
@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import aiohttp
 import pytest
 
-from anibridge_anilist_provider.client import AniListClient
+from anibridge_anilist_provider.client import AnilistClient
 from anibridge_anilist_provider.models import (
     Media,
     MediaFormat,
@@ -31,9 +31,9 @@ from anibridge_anilist_provider.models import (
 
 
 @pytest.fixture()
-def client() -> AniListClient:
-    """Return a fresh AniListClient instance backed by the stubbed token."""
-    return AniListClient(anilist_token="token", profile_name="pytest")
+def client() -> AnilistClient:
+    """Return a fresh AnilistClient instance backed by the stubbed token."""
+    return AnilistClient(anilist_token="token", profile_name="pytest")
 
 
 @pytest.mark.asyncio
@@ -57,7 +57,7 @@ async def test_get_session_creates_and_reuses_client_session(
         lambda *, headers: DummySession(headers=headers),
     )
 
-    stub_client = AniListClient(anilist_token="abc", profile_name="pytest")
+    stub_client = AnilistClient(anilist_token="abc", profile_name="pytest")
 
     session_one = await stub_client._get_session()
     assert created_headers[0]["Authorization"] == "Bearer abc"
@@ -83,7 +83,7 @@ async def test_close_ignores_already_closed_session():
             self.close_calls += 1
             self.closed = True
 
-    stub_client = AniListClient(anilist_token="abc", profile_name="pytest")
+    stub_client = AnilistClient(anilist_token="abc", profile_name="pytest")
     stub_client._session = cast(aiohttp.ClientSession, DummySession())
 
     await stub_client.close()
@@ -94,7 +94,7 @@ async def test_close_ignores_already_closed_session():
 
 @pytest.mark.asyncio
 async def test_initialize_fetches_user_and_clears_cache(
-    client: AniListClient, media_factory: Callable[[int, str], Media]
+    client: AnilistClient, media_factory: Callable[[int, str], Media]
 ):
     """Initialize should reset the cache and store the fetched user object."""
     fake_user = User.model_construct(id=999, name="Init User")
@@ -108,7 +108,7 @@ async def test_initialize_fetches_user_and_clears_cache(
 
 
 @pytest.mark.asyncio
-async def test_initialize_parses_user_timezone_offset(client: AniListClient):
+async def test_initialize_parses_user_timezone_offset(client: AnilistClient):
     """Client.initialize should parse the user's timezone string into a tzinfo.
 
     It should accept timezone offsets both with and without a leading sign.
@@ -136,7 +136,7 @@ async def test_initialize_parses_user_timezone_offset(client: AniListClient):
 
 
 @pytest.mark.asyncio
-async def test_get_user_returns_viewer_payload(client: AniListClient):
+async def test_get_user_returns_viewer_payload(client: AnilistClient):
     """Get_user should deserialize the Viewer response into a User model."""
     client._make_request = AsyncMock(
         return_value={
@@ -157,7 +157,7 @@ async def test_get_user_returns_viewer_payload(client: AniListClient):
 
 
 @pytest.mark.asyncio
-async def test_get_anime_prefers_cached_entry(client: AniListClient, media_factory):
+async def test_get_anime_prefers_cached_entry(client: AnilistClient, media_factory):
     """get_anime should avoid the network when a cached entry exists."""
     cached_media: Media = media_factory(999, "cached show")
     client.offline_anilist_entries[cached_media.id] = cached_media
@@ -171,7 +171,7 @@ async def test_get_anime_prefers_cached_entry(client: AniListClient, media_facto
 
 @pytest.mark.asyncio
 async def test_batch_get_anime_fetches_missing_ids(
-    client: AniListClient, media_factory
+    client: AnilistClient, media_factory
 ):
     """batch_get_anime should mix cached entries with fetched ones."""
     cached_media: Media = media_factory(101, "cached")
@@ -199,7 +199,7 @@ async def test_batch_get_anime_fetches_missing_ids(
 
 @pytest.mark.asyncio
 async def test_batch_get_anime_returns_cached_when_all_present(
-    client: AniListClient, media_factory: Callable[[int, str], Media]
+    client: AnilistClient, media_factory: Callable[[int, str], Media]
 ):
     """batch_get_anime should skip network work when everything is cached."""
     first = media_factory(10, "alpha")
@@ -214,14 +214,14 @@ async def test_batch_get_anime_returns_cached_when_all_present(
 
 
 @pytest.mark.asyncio
-async def test_batch_get_anime_handles_empty_input(client: AniListClient):
+async def test_batch_get_anime_handles_empty_input(client: AnilistClient):
     """batch_get_anime should immediately return when no ids are provided."""
     assert await client.batch_get_anime([]) == []
 
 
 @pytest.mark.asyncio
 async def test_search_anime_filters_episode_and_status(
-    client: AniListClient, media_factory: Callable[[int, str], Media]
+    client: AnilistClient, media_factory: Callable[[int, str], Media]
 ):
     """search_anime should honor both release status and episode filters."""
     releasing: Media = media_factory(1, "airing")
@@ -249,7 +249,7 @@ async def test_search_anime_filters_episode_and_status(
 
 @pytest.mark.asyncio
 async def test_search_anime_without_episode_filter_returns_all(
-    client: AniListClient, media_factory: Callable[[int, str], Media]
+    client: AnilistClient, media_factory: Callable[[int, str], Media]
 ):
     """search_anime should yield every result when an episode filter is absent."""
     finished: Media = media_factory(4, "finished")
@@ -284,7 +284,7 @@ def _build_saved_entry(media_id: int, title: str) -> MediaListWithMedia:
 
 
 @pytest.mark.asyncio
-async def test_update_anime_entry_caches_saved_media(client: AniListClient):
+async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
     """Updating an entry should refresh the offline cache with the response payload."""
     entry = MediaList(id=10, user_id=1, media_id=777, status=MediaListStatus.CURRENT)
     saved_entry = _build_saved_entry(entry.media_id, "cache me")
@@ -301,7 +301,7 @@ async def test_update_anime_entry_caches_saved_media(client: AniListClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_anime_entry_requires_user(client: AniListClient):
+async def test_delete_anime_entry_requires_user(client: AnilistClient):
     """Deleting without a user context should raise a client error."""
     with pytest.raises(aiohttp.ClientError):
         await client.delete_anime_entry(entry_id=1, media_id=1)
@@ -309,7 +309,7 @@ async def test_delete_anime_entry_requires_user(client: AniListClient):
 
 @pytest.mark.asyncio
 async def test_delete_anime_entry_removes_cache(
-    client: AniListClient, media_factory: Callable[[int, str], Media]
+    client: AnilistClient, media_factory: Callable[[int, str], Media]
 ):
     """Successful deletes should purge cached entries by media id."""
     media = media_factory(303, "delete me")
@@ -331,7 +331,7 @@ async def test_delete_anime_entry_removes_cache(
 
 
 @pytest.mark.asyncio
-async def test_backup_anilist_returns_sanitized_json(client: AniListClient):
+async def test_backup_anilist_returns_sanitized_json(client: AnilistClient):
     """backup_anilist should strip media metadata and populate the cache."""
     user = User.model_construct(id=1, name="Backup Tester")
     client.user = user
@@ -374,14 +374,14 @@ async def test_backup_anilist_returns_sanitized_json(client: AniListClient):
 
 
 @pytest.mark.asyncio
-async def test_backup_anilist_requires_user(client: AniListClient):
+async def test_backup_anilist_requires_user(client: AnilistClient):
     """backup_anilist should raise when invoked without an authenticated user."""
     with pytest.raises(aiohttp.ClientError):
         await client.backup_anilist()
 
 
 @pytest.mark.asyncio
-async def test_restore_anilist_invokes_batch_update(client: AniListClient):
+async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
     """restore_anilist should fan out the parsed entries to batch updates."""
     entry = MediaList(id=11, user_id=1, media_id=222, status=MediaListStatus.CURRENT)
     group = MediaListGroup.model_construct(
@@ -406,7 +406,7 @@ async def test_restore_anilist_invokes_batch_update(client: AniListClient):
 
 
 @pytest.mark.asyncio
-async def test_media_list_entry_to_media_merges_metadata(client: AniListClient):
+async def test_media_list_entry_to_media_merges_metadata(client: AnilistClient):
     """_media_list_entry_to_media should combine list and media fields."""
     saved_entry = _build_saved_entry(515, "merge target")
     media = client._media_list_entry_to_media(saved_entry)
@@ -481,7 +481,7 @@ async def test_make_request_retries_rate_limit(monkeypatch: pytest.MonkeyPatch):
             _ResponseContext(200, payload={"data": {"ok": True}}),
         ]
     )
-    client = AniListClient(anilist_token="token", profile_name="pytest")
+    client = AnilistClient(anilist_token="token", profile_name="pytest")
     client._get_session = AsyncMock(return_value=session)
     sleep = AsyncMock()
     monkeypatch.setattr(asyncio, "sleep", sleep)
@@ -501,7 +501,7 @@ async def test_make_request_retries_bad_gateway(monkeypatch: pytest.MonkeyPatch)
             _ResponseContext(200, payload={"data": {"ok": 2}}),
         ]
     )
-    client = AniListClient(anilist_token="token", profile_name="pytest")
+    client = AnilistClient(anilist_token="token", profile_name="pytest")
     client._get_session = AsyncMock(return_value=session)
     monkeypatch.setattr(asyncio, "sleep", AsyncMock())
 
@@ -519,7 +519,7 @@ async def test_make_request_recovers_from_client_error(monkeypatch: pytest.Monke
             _ResponseContext(200, payload={"data": {"ok": 3}}),
         ]
     )
-    client = AniListClient(anilist_token="token", profile_name="pytest")
+    client = AnilistClient(anilist_token="token", profile_name="pytest")
     client._get_session = AsyncMock(return_value=session)
     monkeypatch.setattr(asyncio, "sleep", AsyncMock())
 
@@ -534,7 +534,7 @@ async def test_make_request_raises_after_three_failures(
 ):
     """_make_request should raise once the retry budget is exhausted."""
     session = _FakeSession([aiohttp.ClientError("boom")] * 4)
-    client = AniListClient(anilist_token="token", profile_name="pytest")
+    client = AnilistClient(anilist_token="token", profile_name="pytest")
     client._get_session = AsyncMock(return_value=session)
     monkeypatch.setattr(asyncio, "sleep", AsyncMock())
 
@@ -555,13 +555,13 @@ def _media_list(media_id: int) -> MediaList:
 
 
 @pytest.mark.asyncio
-async def test_batch_update_anime_entries_handles_empty_input(client: AniListClient):
+async def test_batch_update_anime_entries_handles_empty_input(client: AnilistClient):
     """batch_update_anime_entries should early-exit when given no entries."""
     assert await client.batch_update_anime_entries([]) is None
 
 
 @pytest.mark.asyncio
-async def test_batch_update_anime_entries_updates_cache(client: AniListClient):
+async def test_batch_update_anime_entries_updates_cache(client: AnilistClient):
     """Batch updates should process entries in multiple chunks and cache results."""
     entries = [_media_list(i) for i in range(1, 12)]
     calls = 0
@@ -598,7 +598,7 @@ async def test_batch_update_anime_entries_updates_cache(client: AniListClient):
 
 @pytest.mark.asyncio
 async def test_get_anime_fetches_from_api_when_not_cached(
-    client: AniListClient, media_factory: Callable[[int, str], Media]
+    client: AnilistClient, media_factory: Callable[[int, str], Media]
 ):
     """get_anime should call out to AniList when the cache is missing the id."""
     media = media_factory(505, "api show")
@@ -614,7 +614,7 @@ async def test_get_anime_fetches_from_api_when_not_cached(
 
 @pytest.mark.asyncio
 async def test_batch_get_anime_mixed_cache_uses_network(
-    client: AniListClient, media_factory: Callable[[int, str], Media]
+    client: AnilistClient, media_factory: Callable[[int, str], Media]
 ):
     """batch_get_anime should fallback to the API for missing ids."""
     cached = media_factory(1, "cached")
@@ -640,7 +640,7 @@ async def test_batch_get_anime_mixed_cache_uses_network(
 
 
 @pytest.mark.asyncio
-async def test__search_anime_uses_movie_formats(client: AniListClient):
+async def test__search_anime_uses_movie_formats(client: AnilistClient):
     """_search_anime should restrict formats to movies when requested."""
     captured: dict[str, Any] = {}
 
@@ -656,7 +656,7 @@ async def test__search_anime_uses_movie_formats(client: AniListClient):
 
 
 @pytest.mark.asyncio
-async def test__search_anime_uses_show_formats(client: AniListClient):
+async def test__search_anime_uses_show_formats(client: AnilistClient):
     """_search_anime should restrict formats to shows when requested."""
     captured: dict[str, Any] = {}
 

@@ -7,8 +7,8 @@ from typing import cast
 
 import pytest
 
-from anibridge_anilist_provider.client import AniListClient
-from anibridge_anilist_provider.list import AniListListEntry, AniListListProvider
+from anibridge_anilist_provider.client import AnilistClient
+from anibridge_anilist_provider.list import AnilistListEntry, AnilistListProvider
 from anibridge_anilist_provider.models import (
     Media,
     MediaCoverImage,
@@ -24,7 +24,7 @@ from anibridge_anilist_provider.models import (
 
 
 @dataclass
-class FakeAniListClient:
+class FakeAnilistClient:
     """Minimal asynchronous client stand-in used by the tests."""
 
     medias: dict[int, Media] = field(default_factory=dict)
@@ -139,9 +139,9 @@ def second_media(media_factory: Callable[[int, str], Media]) -> Media:
 
 
 @pytest.fixture()
-def fake_client(sample_media: Media, second_media: Media) -> FakeAniListClient:
+def fake_client(sample_media: Media, second_media: Media) -> FakeAnilistClient:
     """Provide a fake AniList client seeded with deterministic media objects."""
-    client = FakeAniListClient(
+    client = FakeAnilistClient(
         {sample_media.id: sample_media, second_media.id: second_media}
     )
     client.search_results = [sample_media, second_media]
@@ -149,23 +149,23 @@ def fake_client(sample_media: Media, second_media: Media) -> FakeAniListClient:
 
 
 @pytest.fixture()
-def provider(fake_client: FakeAniListClient) -> AniListListProvider:
-    """Return an AniListListProvider wired to the fake client."""
-    provider = AniListListProvider(
+def provider(fake_client: FakeAnilistClient) -> AnilistListProvider:
+    """Return an AnilistListProvider wired to the fake client."""
+    provider = AnilistListProvider(
         config={"token": "fake-token", "profile_name": "pytest"}
     )
-    provider._client = cast(AniListClient, fake_client)
+    provider._client = cast(AnilistClient, fake_client)
     provider._score_format = ScoreFormat.POINT_10_DECIMAL
     return provider
 
 
 @pytest.fixture()
-def entry_factory(provider: AniListListProvider) -> Callable[[Media], AniListListEntry]:
-    """Return a helper that wraps media objects in AniListListEntry instances."""
+def entry_factory(provider: AnilistListProvider) -> Callable[[Media], AnilistListEntry]:
+    """Return a helper that wraps media objects in AnilistListEntry instances."""
 
-    def _build(media: Media) -> AniListListEntry:
+    def _build(media: Media) -> AnilistListEntry:
         assert media.media_list_entry is not None
-        return AniListListEntry(provider, media=media, entry=media.media_list_entry)
+        return AnilistListEntry(provider, media=media, entry=media.media_list_entry)
 
     return _build
 
@@ -173,6 +173,6 @@ def entry_factory(provider: AniListListProvider) -> Callable[[Media], AniListLis
 @pytest.fixture(autouse=True)
 def disable_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
     """Remove the rate limiter decorator so tests do not wait between retries."""
-    wrapped = getattr(AniListClient._make_request, "__wrapped__", None)
+    wrapped = getattr(AnilistClient._make_request, "__wrapped__", None)
     if wrapped is not None:
-        monkeypatch.setattr(AniListClient, "_make_request", wrapped)
+        monkeypatch.setattr(AnilistClient, "_make_request", wrapped)

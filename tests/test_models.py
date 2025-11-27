@@ -75,7 +75,7 @@ def test_media_list_status_comparisons_with_other_types():
 
 
 def test_base_model_unset_and_dump_helpers():
-    """AniListBaseModel helpers should reset fields and honor aliasing."""
+    """AnilistBaseModel helpers should reset fields and honor aliasing."""
     title = MediaTitle(romaji="romaji", english="english")
     title.unset_fields(["english"])
     assert title.english is None

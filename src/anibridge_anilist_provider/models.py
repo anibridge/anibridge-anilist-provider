@@ -12,13 +12,13 @@ from pydantic.alias_generators import to_camel
 UTCDateTime = Annotated[datetime, AfterValidator(lambda dt: dt.astimezone(UTC))]
 
 
-class AniListBaseEnum(StrEnum):
+class AnilistBaseEnum(StrEnum):
     """Base enum for AniList models."""
 
     pass
 
 
-class MediaFormat(AniListBaseEnum):
+class MediaFormat(AnilistBaseEnum):
     """Enum representing media formats (TV, MOVIE, etc)."""
 
     TV = "TV"
@@ -33,7 +33,7 @@ class MediaFormat(AniListBaseEnum):
     ONE_SHOT = "ONE_SHOT"
 
 
-class MediaStatus(AniListBaseEnum):
+class MediaStatus(AnilistBaseEnum):
     """Enum representing media status (FINISHED, RELEASING, etc)."""
 
     FINISHED = "FINISHED"
@@ -43,7 +43,7 @@ class MediaStatus(AniListBaseEnum):
     HIATUS = "HIATUS"
 
 
-class MediaListStatus(AniListBaseEnum):
+class MediaListStatus(AnilistBaseEnum):
     """Enum representing status of a media list entry (CURRENT, COMPLETED, etc)."""
 
     _ignore_ = ["__priority"]  # noqa: RUF012
@@ -107,7 +107,7 @@ class MediaListStatus(AniListBaseEnum):
         return self.__priority[self.value] >= self.__priority[other.value]
 
 
-class ScoreFormat(AniListBaseEnum):
+class ScoreFormat(AnilistBaseEnum):
     """Enum representing score formats for media list entries."""
 
     POINT_100 = "POINT_100"
@@ -117,7 +117,7 @@ class ScoreFormat(AniListBaseEnum):
     POINT_3 = "POINT_3"
 
 
-class UserTitleLanguage(AniListBaseEnum):
+class UserTitleLanguage(AnilistBaseEnum):
     """Enum representing user title language preferences."""
 
     ROMAJI = "ROMAJI"
@@ -128,7 +128,7 @@ class UserTitleLanguage(AniListBaseEnum):
     NATIVE_STYLISED = "NATIVE_STYLISED"
 
 
-class AniListBaseModel(BaseModel):
+class AnilistBaseModel(BaseModel):
     """Base, abstract class for all AniList models to represent GraphQL objects.
 
     Provides serialization, aliasing, and GraphQL query generation utilities.
@@ -187,7 +187,7 @@ class AniListBaseModel(BaseModel):
             camel_field_name = to_camel(field_name)
 
             if isinstance(field_type, type) and issubclass(
-                field_type, AniListBaseModel
+                field_type, AnilistBaseModel
             ):
                 nested_fields = field_type.model_dump_graphql()
                 if nested_fields:
@@ -213,21 +213,21 @@ class AniListBaseModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class MediaListOptions(AniListBaseModel):
+class MediaListOptions(AnilistBaseModel):
     """Model representing media list options for a user."""
 
     score_format: ScoreFormat | None = None
     row_order: str | None = None
 
 
-class UserOptions(AniListBaseModel):
+class UserOptions(AnilistBaseModel):
     """Model representing user options/preferences."""
 
     title_language: UserTitleLanguage | None = None
     timezone: str | None = None
 
 
-class User(AniListBaseModel):
+class User(AnilistBaseModel):
     """Model representing an AniList user."""
 
     id: int
@@ -236,7 +236,7 @@ class User(AniListBaseModel):
     options: UserOptions | None = None
 
 
-class MediaTitle(AniListBaseModel):
+class MediaTitle(AnilistBaseModel):
     """Model representing media titles in various languages."""
 
     romaji: str | None = None
@@ -261,7 +261,7 @@ class MediaTitle(AniListBaseModel):
         return self.user_preferred or self.english or self.romaji or self.native or ""
 
 
-class FuzzyDate(AniListBaseModel):
+class FuzzyDate(AnilistBaseModel):
     """Model representing a fuzzy date (year, month, day may be missing)."""
 
     year: int | None = None
@@ -367,7 +367,7 @@ class FuzzyDate(AniListBaseModel):
         )
 
 
-class MediaList(AniListBaseModel):
+class MediaList(AnilistBaseModel):
     """Model representing a media list entry in AniList."""
 
     id: int
@@ -384,7 +384,7 @@ class MediaList(AniListBaseModel):
     updated_at: UTCDateTime | None = None
 
 
-class MediaListGroup[EntryType: MediaList](AniListBaseModel):
+class MediaListGroup[EntryType: MediaList](AnilistBaseModel):
     """Model representing a group of media list entries."""
 
     entries: list[EntryType] = []
@@ -394,7 +394,7 @@ class MediaListGroup[EntryType: MediaList](AniListBaseModel):
     status: MediaListStatus | None = None
 
 
-class MediaListCollection[GroupType: MediaListGroup](AniListBaseModel):
+class MediaListCollection[GroupType: MediaListGroup](AnilistBaseModel):
     """Model representing a collection of media list groups for a user."""
 
     user: User | None = None
@@ -402,7 +402,7 @@ class MediaListCollection[GroupType: MediaListGroup](AniListBaseModel):
     has_next_chunk: bool | None = None
 
 
-class MediaCoverImage(AniListBaseModel):
+class MediaCoverImage(AnilistBaseModel):
     """Model representing a media cover image."""
 
     extra_large: str | None = None
@@ -411,7 +411,7 @@ class MediaCoverImage(AniListBaseModel):
     color: str | None = None
 
 
-class MediaWithoutList(AniListBaseModel):
+class MediaWithoutList(AnilistBaseModel):
     """Model representing a media entry without list information."""
 
     id: int

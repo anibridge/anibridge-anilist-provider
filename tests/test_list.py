@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from anibridge.list import ListMediaType, ListStatus
 
-from anibridge_anilist_provider.client import AniListClient
+from anibridge_anilist_provider.client import AnilistClient
 from anibridge_anilist_provider.list import (
-    AniListListEntry,
-    AniListListMedia,
-    AniListListProvider,
+    AnilistListEntry,
+    AnilistListMedia,
+    AnilistListProvider,
 )
 from anibridge_anilist_provider.models import (
     FuzzyDate,
@@ -23,18 +23,18 @@ from anibridge_anilist_provider.models import (
     ScoreFormat,
 )
 from anibridge_anilist_provider.models import (
-    User as AniListAPIUser,
+    User as AnilistAPIUser,
 )
 
 if TYPE_CHECKING:
-    from tests.conftest import FakeAniListClient
+    from tests.conftest import FakeAnilistClient
 
 
 @pytest.mark.asyncio
 async def test_build_media_payload_maps_entry_state(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     sample_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
 ):
     """Ensure _build_media_payload honors the entry transformations."""
     entry = entry_factory(sample_media)
@@ -61,11 +61,11 @@ async def test_build_media_payload_maps_entry_state(
 
 @pytest.mark.asyncio
 async def test_update_entries_batch_calls_client_once(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     sample_media: Media,
     second_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
 ):
     """Batch updates should forward payloads to the underlying client."""
     entry_one = entry_factory(sample_media)
@@ -83,21 +83,21 @@ async def test_update_entries_batch_calls_client_once(
 
 @pytest.mark.asyncio
 async def test_get_entries_batch_preserves_order(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     second_media: Media,
 ):
     """Missing items should map to None while preserving input ordering."""
     results = await provider.get_entries_batch([str(second_media.id), "404"])
     assert results[0] is not None
-    assert isinstance(results[0], AniListListEntry)
+    assert isinstance(results[0], AnilistListEntry)
     assert results[0].media().key == str(second_media.id)
     assert results[1] is None
 
 
 @pytest.mark.asyncio
 async def test_search_wraps_media_into_entries(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     sample_media: Media,
 ):
     """Search should adapt AniList media results into AniBridge entries."""
@@ -107,13 +107,13 @@ async def test_search_wraps_media_into_entries(
 
     assert len(results) == 1
     entry = results[0]
-    assert isinstance(entry, AniListListEntry)
+    assert isinstance(entry, AnilistListEntry)
     assert entry.media().key == str(sample_media.id)
     assert entry.status == ListStatus.CURRENT
 
 
 def test_entry_progress_validation(
-    entry_factory: Callable[[Media], AniListListEntry], sample_media: Media
+    entry_factory: Callable[[Media], AnilistListEntry], sample_media: Media
 ):
     """Progress setter should reject negative numbers."""
     entry = entry_factory(sample_media)
@@ -122,10 +122,10 @@ def test_entry_progress_validation(
 
 
 def test_entry_user_rating_respects_score_format(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     sample_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
 ):
     """User rating should convert between AniList formats and 0-100 scale."""
     if fake_client.user.media_list_options is None:
@@ -141,8 +141,8 @@ def test_entry_user_rating_respects_score_format(
     assert entry.user_rating == 80
 
 
-class StubAniListClient:
-    """Lightweight stub that mimics AniListClient behaviors for provider tests."""
+class StubAnilistClient:
+    """Lightweight stub that mimics AnilistClient behaviors for provider tests."""
 
     def __init__(self) -> None:
         """Initialize stub state containers."""
@@ -154,9 +154,9 @@ class StubAniListClient:
         """Record that initialization was invoked."""
         self.initialize_called = True
 
-    async def get_user(self) -> AniListAPIUser:
+    async def get_user(self) -> AnilistAPIUser:
         """Return a deterministic AniList API user payload."""
-        return AniListAPIUser(
+        return AnilistAPIUser(
             id=1,
             name="Remote User",
             media_list_options=MediaListOptions(score_format=ScoreFormat.POINT_5),
@@ -186,9 +186,9 @@ class StubAniListClient:
     ],
 )
 def test_entry_user_rating_setter_handles_all_formats(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     sample_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     score_format: ScoreFormat,
     rating: int,
     expected_internal: float,
@@ -214,10 +214,10 @@ def test_entry_user_rating_setter_handles_all_formats(
     ],
 )
 def test_entry_user_rating_getter_honors_client_format(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     sample_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     score_format: ScoreFormat,
     stored: float,
     expected_rating: int,
@@ -235,9 +235,9 @@ def test_entry_user_rating_getter_honors_client_format(
 
 
 def test_entry_user_rating_rejects_out_of_range(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     sample_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
 ):
     """Ratings above the allowed range should be rejected."""
     entry = entry_factory(sample_media)
@@ -256,7 +256,7 @@ def test_entry_user_rating_rejects_out_of_range(
     ],
 )
 def test_entry_status_getter_handles_media_statuses(
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     sample_media: Media,
     media_status: MediaListStatus,
     expected: ListStatus,
@@ -269,7 +269,7 @@ def test_entry_status_getter_handles_media_statuses(
 
 
 def test_entry_status_setter_rejects_unknown_value(
-    entry_factory: Callable[[Media], AniListListEntry], sample_media: Media
+    entry_factory: Callable[[Media], AnilistListEntry], sample_media: Media
 ):
     """Setting an unsupported status should raise a ValueError."""
     entry = entry_factory(sample_media)
@@ -289,7 +289,7 @@ def test_entry_progress_allows_none(entry_factory, sample_media):
 
 
 def test_entry_repeats_validation(
-    entry_factory: Callable[[Media], AniListListEntry], sample_media: Media
+    entry_factory: Callable[[Media], AnilistListEntry], sample_media: Media
 ):
     """Repeat setter should allow None but reject negatives."""
     entry = entry_factory(sample_media)
@@ -303,7 +303,7 @@ def test_entry_repeats_validation(
 
 
 def test_entry_user_rating_returns_none_when_unset(
-    entry_factory: Callable[[Media], AniListListEntry], sample_media: Media
+    entry_factory: Callable[[Media], AnilistListEntry], sample_media: Media
 ):
     """user_rating should return None when AniList lacks a score."""
     entry = entry_factory(sample_media)
@@ -313,10 +313,10 @@ def test_entry_user_rating_returns_none_when_unset(
 
 
 def test_entry_user_rating_getter_defaults_without_format(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     sample_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
 ):
     """If AniList omits the score format the getter should fall back to ints."""
     entry = entry_factory(sample_media)
@@ -331,9 +331,9 @@ def test_entry_user_rating_getter_defaults_without_format(
 
 
 def test_entry_user_rating_setter_handles_none_and_unknown_format(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     sample_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
 ):
     """Setter should clear scores and fall back to float values when needed."""
     entry = entry_factory(sample_media)
@@ -347,7 +347,7 @@ def test_entry_user_rating_setter_handles_none_and_unknown_format(
 
 
 def test_entry_total_units_prefers_media_total(
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     media_factory: Callable[[int, str], Media],
 ):
     """Entry.total_units should return the media's explicit episode count."""
@@ -358,7 +358,7 @@ def test_entry_total_units_prefers_media_total(
 
 
 def test_entry_total_units_returns_none_for_tv_without_data(
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     media_factory: Callable[[int, str], Media],
 ):
     """TV entries without total units and unknown episodes should return None."""
@@ -369,8 +369,8 @@ def test_entry_total_units_returns_none_for_tv_without_data(
 
 
 def test_entry_media_and_provider_accessors(
-    provider: AniListListProvider,
-    entry_factory: Callable[[Media], AniListListEntry],
+    provider: AnilistListProvider,
+    entry_factory: Callable[[Media], AnilistListEntry],
     sample_media: Media,
 ):
     """Entry helpers should expose the underlying media and provider."""
@@ -382,7 +382,7 @@ def test_entry_media_and_provider_accessors(
 
 @pytest.mark.parametrize("status", list(ListStatus))
 def test_entry_status_roundtrip(
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     sample_media: Media,
     status: ListStatus,
 ):
@@ -397,12 +397,12 @@ def test_entry_status_roundtrip(
 def test_provider_requires_token() -> None:
     """Provider construction without a token should raise a ValueError."""
     with pytest.raises(ValueError):
-        AniListListProvider(config={})
+        AnilistListProvider(config={})
 
 
 def test_entry_started_and_finished_setter_respects_user_timezone(
-    entry_factory: Callable[[Media], AniListListEntry],
-    fake_client: FakeAniListClient,
+    entry_factory: Callable[[Media], AnilistListEntry],
+    fake_client: FakeAnilistClient,
     sample_media: Media,
 ):
     """Setting a tz-aware datetime stores date adjusted to user's timezone."""
@@ -422,8 +422,8 @@ def test_entry_started_and_finished_setter_respects_user_timezone(
 
 
 def test_entry_started_and_finished_getter_returns_aware_datetime(
-    entry_factory: Callable[[Media], AniListListEntry],
-    fake_client: FakeAniListClient,
+    entry_factory: Callable[[Media], AnilistListEntry],
+    fake_client: FakeAnilistClient,
     sample_media: Media,
 ):
     """Getter should return datetimes using the client's timezone information."""
@@ -446,9 +446,9 @@ def test_entry_started_and_finished_getter_returns_aware_datetime(
 @pytest.mark.asyncio
 async def test_provider_initialize_sets_user_and_score_format() -> None:
     """Initialize should cache the provider user metadata and score format."""
-    provider = AniListListProvider(config={"token": "abc"})
-    stub = StubAniListClient()
-    provider._client = cast(AniListClient, stub)
+    provider = AnilistListProvider(config={"token": "abc"})
+    stub = StubAnilistClient()
+    provider._client = cast(AnilistClient, stub)
 
     await provider.initialize()
 
@@ -462,9 +462,9 @@ async def test_provider_initialize_sets_user_and_score_format() -> None:
 @pytest.mark.asyncio
 async def test_backup_and_restore_list_delegate_to_client() -> None:
     """backup_list and restore_list should proxy to the underlying client."""
-    provider = AniListListProvider(config={"token": "abc"})
-    stub = StubAniListClient()
-    provider._client = cast(AniListClient, stub)
+    provider = AnilistListProvider(config={"token": "abc"})
+    stub = StubAnilistClient()
+    provider._client = cast(AnilistClient, stub)
 
     backup_payload = await provider.backup_list()
     await provider.restore_list("payload")
@@ -476,9 +476,9 @@ async def test_backup_and_restore_list_delegate_to_client() -> None:
 @pytest.mark.asyncio
 async def test_provider_close_forwards_to_client() -> None:
     """Close should call through to the AniList client."""
-    provider = AniListListProvider(config={"token": "abc"})
-    stub = StubAniListClient()
-    provider._client = cast(AniListClient, stub)
+    provider = AnilistListProvider(config={"token": "abc"})
+    stub = StubAnilistClient()
+    provider._client = cast(AnilistClient, stub)
 
     await provider.close()
     # close() doesn't expose state, but ensure stub is still usable
@@ -487,8 +487,8 @@ async def test_provider_close_forwards_to_client() -> None:
 
 @pytest.mark.asyncio
 async def test_get_entry_returns_none_without_media_list(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     media_factory: Callable[[int, str], Media],
 ):
     """get_entry should return None when AniList lacks a list entry."""
@@ -500,15 +500,15 @@ async def test_get_entry_returns_none_without_media_list(
 
 
 @pytest.mark.asyncio
-async def test_get_entries_batch_handles_empty_input(provider: AniListListProvider):
+async def test_get_entries_batch_handles_empty_input(provider: AnilistListProvider):
     """get_entries_batch should preserve list length even when empty."""
     assert await provider.get_entries_batch([]) == []
 
 
 @pytest.mark.asyncio
 async def test_update_entries_batch_handles_empty_sequence(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
 ):
     """update_entries_batch should bypass the client when no entries exist."""
     assert await provider.update_entries_batch([]) == []
@@ -517,9 +517,9 @@ async def test_update_entries_batch_handles_empty_sequence(
 
 @pytest.mark.asyncio
 async def test_build_media_payload_uses_base_status_when_entry_missing(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     sample_media: Media,
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
 ):
     """_build_media_payload should fall back to AniList's current status."""
     entry = entry_factory(sample_media)
@@ -533,8 +533,8 @@ async def test_build_media_payload_uses_base_status_when_entry_missing(
 
 @pytest.mark.asyncio
 async def test_build_entry_creates_placeholder_when_missing(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     media_factory: Callable[[int, str], Media],
 ):
     """Provider.build_entry should fabricate list data when AniList lacks it."""
@@ -551,7 +551,7 @@ async def test_build_entry_creates_placeholder_when_missing(
 
 
 def test_media_total_units_defaults_for_movies(
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     media_factory: Callable[[int, str], Media],
 ):
     """Movie entries without an explicit episode count should default to 1."""
@@ -565,7 +565,7 @@ def test_media_total_units_defaults_for_movies(
 
 
 def test_entry_total_units_falls_back_for_non_tv_media(
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     media_factory: Callable[[int, str], Media],
 ):
     """OVA-like formats should default to a single unit when missing episodes."""
@@ -579,45 +579,45 @@ def test_entry_total_units_falls_back_for_non_tv_media(
 
 
 def test_list_media_media_type_and_provider(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     media_factory: Callable[[int, str], Media],
 ):
-    """AniListListMedia should expose both the provider and media_type."""
+    """AnilistListMedia should expose both the provider and media_type."""
     tv_media = media_factory(606, "tv show")
-    tv = AniListListMedia(provider, tv_media)
+    tv = AnilistListMedia(provider, tv_media)
     assert tv.media_type == ListMediaType.TV
     assert tv.provider() is provider
 
     movie_media = media_factory(707, "movie")
     movie_media.format = MediaFormat.MOVIE
-    movie = AniListListMedia(provider, movie_media)
+    movie = AnilistListMedia(provider, movie_media)
     assert movie.media_type == ListMediaType.MOVIE
 
 
 def test_list_media_total_units_prefers_episode_count(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     media_factory: Callable[[int, str], Media],
 ):
     """When AniList exposes an episode count it should be used directly."""
     media = media_factory(808, "long show")
     media.episodes = 52
 
-    assert AniListListMedia(provider, media).total_units == 52
+    assert AnilistListMedia(provider, media).total_units == 52
 
 
 def test_list_media_poster_image_handles_missing_cover(
-    provider: AniListListProvider,
+    provider: AnilistListProvider,
     media_factory: Callable[[int, str], Media],
 ):
     """If the cover image data is missing the poster should be None."""
     media = media_factory(909, "coverless")
     media.cover_image = None
 
-    assert AniListListMedia(provider, media).poster_image is None
+    assert AnilistListMedia(provider, media).poster_image is None
 
 
 def test_media_poster_image_falls_back_to_color(
-    entry_factory: Callable[[Media], AniListListEntry],
+    entry_factory: Callable[[Media], AnilistListEntry],
     media_factory: Callable[[int, str], Media],
 ):
     """Poster image selection should walk the cover image fallbacks."""
@@ -631,8 +631,8 @@ def test_media_poster_image_falls_back_to_color(
 
 @pytest.mark.asyncio
 async def test_clear_cache_empties_fake_storage(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     sample_media: Media,
 ):
     """clear_cache should drop any cached media entries on the client."""
@@ -645,8 +645,8 @@ async def test_clear_cache_empties_fake_storage(
 
 @pytest.mark.asyncio
 async def test_delete_entry_triggers_client_delete(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     sample_media: Media,
 ):
     """Deleting an entry should forward the AniList identifiers to the client."""
@@ -661,8 +661,8 @@ async def test_delete_entry_triggers_client_delete(
 
 @pytest.mark.asyncio
 async def test_delete_entry_noop_without_media_list(
-    provider: AniListListProvider,
-    fake_client: FakeAniListClient,
+    provider: AnilistListProvider,
+    fake_client: FakeAnilistClient,
     media_factory: Callable[[int, str], Media],
 ):
     """Deleting when AniList lacks an entry should not hit the client."""

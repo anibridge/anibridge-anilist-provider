@@ -25,7 +25,7 @@ from anibridge_anilist_provider.models import (
     User,
 )
 
-__all__ = ["AniListClient"]
+__all__ = ["AnilistClient"]
 
 _LOG = getLogger(__name__)
 
@@ -34,7 +34,7 @@ _LOG = getLogger(__name__)
 anilist_limiter = Limiter(rate=30 / 60, capacity=3, jitter=False)
 
 
-class AniListClient:
+class AnilistClient:
     """Client for interacting with the AniList GraphQL API.
 
     This client provides methods to interact with the AniList GraphQL API, including

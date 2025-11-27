@@ -14,7 +14,7 @@ from anibridge.list import (
     list_provider,
 )
 
-from anibridge_anilist_provider.client import AniListClient
+from anibridge_anilist_provider.client import AnilistClient
 from anibridge_anilist_provider.models import (
     FuzzyDate,
     Media,
@@ -26,7 +26,7 @@ from anibridge_anilist_provider.models import (
 
 
 @list_provider
-class AniListListProvider(ListProvider):
+class AnilistListProvider(ListProvider):
     """List provider implementation backed by the AniList GraphQL API."""
 
     NAMESPACE = "anilist"
@@ -44,7 +44,7 @@ class AniListListProvider(ListProvider):
         if not token:
             raise ValueError("AniList token must be provided in the configuration")
 
-        self._client = AniListClient(
+        self._client = AnilistClient(
             anilist_token=token,
             profile_name=profile_name,
         )
@@ -89,7 +89,7 @@ class AniListListProvider(ListProvider):
             media_id=media.media_list_entry.media_id,
         )
 
-    async def get_entry(self, key: str) -> AniListListEntry | None:
+    async def get_entry(self, key: str) -> AnilistListEntry | None:
         """Retrieve a list entry by its media key.
 
         Args:
@@ -98,9 +98,9 @@ class AniListListProvider(ListProvider):
         media = await self._client.get_anime(int(key))
         if media.media_list_entry is None:
             return None
-        return AniListListEntry(self, media=media, entry=media.media_list_entry)
+        return AnilistListEntry(self, media=media, entry=media.media_list_entry)
 
-    async def build_entry(self, key: str) -> AniListListEntry:
+    async def build_entry(self, key: str) -> AnilistListEntry:
         """Construct an AniList list entry for the supplied media key."""
         media = await self._client.get_anime(int(key))
         entry = media.media_list_entry or MediaList(
@@ -108,7 +108,7 @@ class AniListListProvider(ListProvider):
             user_id=self._client.user.id if self._client.user else 0,
             media_id=media.id,
         )
-        return AniListListEntry(self, media=media, entry=entry)
+        return AnilistListEntry(self, media=media, entry=entry)
 
     async def restore_list(self, backup: str) -> None:
         """Restore the list from a backup sequence of list entries.
@@ -118,23 +118,23 @@ class AniListListProvider(ListProvider):
         """
         await self._client.restore_anilist(backup)
 
-    async def search(self, query: str) -> Sequence[AniListListEntry]:
+    async def search(self, query: str) -> Sequence[AnilistListEntry]:
         """Search AniList for entries matching the query.
 
         Args:
             query (str): The search query string.
 
         Returns:
-            Sequence[AniListListEntry]: The sequence of matching entries.
+            Sequence[AnilistListEntry]: The sequence of matching entries.
         """
-        results: list[AniListListEntry] = []
+        results: list[AnilistListEntry] = []
         async for media in self._client.search_anime(query, is_movie=None, limit=10):
             entry = media.media_list_entry or MediaList(
                 id=0,
                 user_id=self._client.user.id if self._client.user else 0,
                 media_id=media.id,
             )
-            results.append(AniListListEntry(self, media=media, entry=entry))
+            results.append(AnilistListEntry(self, media=media, entry=entry))
         return results
 
     async def update_entry(self, key: str, entry: ListEntry) -> None:
@@ -144,7 +144,7 @@ class AniListListProvider(ListProvider):
             key (str): The media key of the entry to update.
             entry (ListEntry): The updated list entry data.
         """
-        payload = await self._build_media_payload(key, cast(AniListListEntry, entry))
+        payload = await self._build_media_payload(key, cast(AnilistListEntry, entry))
         await self._client.update_anime_entry(payload)
 
     def user(self) -> ListUser | None:
@@ -165,20 +165,20 @@ class AniListListProvider(ListProvider):
 
     async def update_entries_batch(
         self, entries: Sequence[ListEntry]
-    ) -> Sequence[AniListListEntry | None]:
+    ) -> Sequence[AnilistListEntry | None]:
         """Update multiple list entries in a single operation.
 
         Args:
             entries (Sequence[ListEntry]): The list entries to update.
 
         Returns:
-            Sequence[AniListListEntry | None]: The sequence of updated entries.
+            Sequence[AnilistListEntry | None]: The sequence of updated entries.
         """
         payloads: list[MediaList] = []
         for entry in entries:
             payloads.append(
                 await self._build_media_payload(
-                    entry.media().key, cast(AniListListEntry, entry)
+                    entry.media().key, cast(AnilistListEntry, entry)
                 )
             )
         if payloads:
@@ -187,14 +187,14 @@ class AniListListProvider(ListProvider):
 
     async def get_entries_batch(
         self, keys: Sequence[str]
-    ) -> Sequence[AniListListEntry | None]:
+    ) -> Sequence[AnilistListEntry | None]:
         """Get multiple list entries by their media keys.
 
         Args:
             keys (Sequence[str]): The media keys of the entries to retrieve.
 
         Returns:
-            Sequence[AniListListEntry | None]: The sequence of retrieved entries.
+            Sequence[AnilistListEntry | None]: The sequence of retrieved entries.
         """
         ids = [int(key) for key in keys]
         if not ids:
@@ -202,19 +202,19 @@ class AniListListProvider(ListProvider):
 
         medias = await self._client.batch_get_anime(ids)
         media_by_id = {media.id: media for media in medias}
-        entries: list[AniListListEntry | None] = []
+        entries: list[AnilistListEntry | None] = []
         for key in keys:
             media = media_by_id.get(int(key))
             if media is None or media.media_list_entry is None:
                 entries.append(None)
                 continue
             entries.append(
-                AniListListEntry(self, media=media, entry=media.media_list_entry)
+                AnilistListEntry(self, media=media, entry=media.media_list_entry)
             )
         return entries
 
     async def _build_media_payload(
-        self, media_key: str | int, entry: AniListListEntry
+        self, media_key: str | int, entry: AnilistListEntry
     ) -> MediaList:
         """Build the MediaList payload for updating an entry."""
         media_id = int(media_key)
@@ -256,14 +256,14 @@ class AniListListProvider(ListProvider):
         )
 
 
-class AniListListMedia(ListMedia):
+class AnilistListMedia(ListMedia):
     """AniList list media implementation."""
 
-    def __init__(self, provider: AniListListProvider, media: Media) -> None:
+    def __init__(self, provider: AnilistListProvider, media: Media) -> None:
         """Initialize the AniList list media.
 
         Args:
-            provider (AniListListProvider): The list provider instance.
+            provider (AnilistListProvider): The list provider instance.
             media (Media): The AniList media object.
         """
         self._provider = provider
@@ -300,30 +300,30 @@ class AniListListMedia(ListMedia):
             return None
         return image.extra_large or image.large or image.medium or image.color
 
-    def provider(self) -> AniListListProvider:
+    def provider(self) -> AnilistListProvider:
         """Get the list provider associated with the media.
 
         Returns:
-            AniListListProvider: The list provider instance.
+            AnilistListProvider: The list provider instance.
         """
         return self._provider
 
 
-class AniListListEntry(ListEntry):
+class AnilistListEntry(ListEntry):
     """AniList list entry implementation."""
 
     def __init__(
-        self, provider: AniListListProvider, media: Media, entry: MediaList
+        self, provider: AnilistListProvider, media: Media, entry: MediaList
     ) -> None:
         """Initialize the AniList list entry.
 
         Args:
-            provider (AniListListProvider): The list provider instance.
+            provider (AnilistListProvider): The list provider instance.
             media (Media): The AniList media object.
             entry (MediaList): The AniList media list entry object.
         """
         self._provider = provider
-        self._media = AniListListMedia(provider, media)
+        self._media = AnilistListMedia(provider, media)
         self._entry = entry
 
         self.key = str(entry.id)
@@ -512,18 +512,18 @@ class AniListListEntry(ListEntry):
             return 1
         return None
 
-    def media(self) -> AniListListMedia:
+    def media(self) -> AnilistListMedia:
         """Get the media item associated with the list entry.
 
         Returns:
-            AniListListMedia: The media item.
+            AnilistListMedia: The media item.
         """
         return self._media
 
-    def provider(self) -> AniListListProvider:
+    def provider(self) -> AnilistListProvider:
         """Get the list provider for this entry.
 
         Returns:
-            AniListListProvider: The owning list provider instance.
+            AnilistListProvider: The owning list provider instance.
         """
         return self._provider
