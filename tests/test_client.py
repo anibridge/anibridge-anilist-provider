@@ -3,6 +3,7 @@
 import asyncio
 import json
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any, cast
 from unittest import mock
 from unittest.mock import AsyncMock
@@ -25,6 +26,7 @@ from anibridge_anilist_provider.models import (
     MediaTitle,
     MediaWithoutList,
     User,
+    UserOptions,
 )
 
 
@@ -103,6 +105,34 @@ async def test_initialize_fetches_user_and_clears_cache(
 
     assert client.user == fake_user
     assert client.offline_anilist_entries == {}
+
+
+@pytest.mark.asyncio
+async def test_initialize_parses_user_timezone_offset(client: AniListClient):
+    """Client.initialize should parse the user's timezone string into a tzinfo.
+
+    It should accept timezone offsets both with and without a leading sign.
+    """
+    # timezone without a sign should be treated as positive
+    client.get_user = AsyncMock(
+        return_value=User.model_construct(
+            id=1, name="tz", user_options=UserOptions(timezone="02:30")
+        )
+    )
+
+    await client.initialize()
+
+    assert client.user_timezone.utcoffset(None) == timedelta(hours=2, minutes=30)
+
+    # negative offsets should also be parsed correctly
+    client.get_user = AsyncMock(
+        return_value=User.model_construct(
+            id=1, name="tz", user_options=UserOptions(timezone="-05:00")
+        )
+    )
+    await client.initialize()
+
+    assert client.user_timezone.utcoffset(None) == timedelta(hours=-5)
 
 
 @pytest.mark.asyncio

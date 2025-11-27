@@ -117,6 +117,17 @@ class ScoreFormat(AniListBaseEnum):
     POINT_3 = "POINT_3"
 
 
+class UserTitleLanguage(AniListBaseEnum):
+    """Enum representing user title language preferences."""
+
+    ROMAJI = "ROMAJI"
+    ENGLISH = "ENGLISH"
+    NATIVE = "NATIVE"
+    ROMAJI_STYLISED = "ROMAJI_STYLISED"
+    ENGLISH_STYLISED = "ENGLISH_STYLISED"
+    NATIVE_STYLISED = "NATIVE_STYLISED"
+
+
 class AniListBaseModel(BaseModel):
     """Base, abstract class for all AniList models to represent GraphQL objects.
 
@@ -209,12 +220,20 @@ class MediaListOptions(AniListBaseModel):
     row_order: str | None = None
 
 
+class UserOptions(AniListBaseModel):
+    """Model representing user options/preferences."""
+
+    title_language: UserTitleLanguage | None = None
+    timezone: str | None = None
+
+
 class User(AniListBaseModel):
     """Model representing an AniList user."""
 
     id: int
     name: str
     media_list_options: MediaListOptions | None = None
+    user_options: UserOptions | None = None
 
 
 class MediaTitle(AniListBaseModel):

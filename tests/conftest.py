@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from datetime import UTC
 from typing import cast
 
 import pytest
@@ -42,6 +43,7 @@ class FakeAniListClient:
         self.update_payloads: list[MediaList] = []
         self.batch_update_payloads: list[list[MediaList]] = []
         self.deleted_entries: list[tuple[int, int]] = []
+        self.user_timezone = UTC
 
         if not self.search_results:
             self.search_results = list(self.medias.values())

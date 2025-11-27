@@ -1,7 +1,7 @@
 """Tests that focus on the AniList list provider behavior."""
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -398,6 +398,49 @@ def test_provider_requires_token() -> None:
     """Provider construction without a token should raise a ValueError."""
     with pytest.raises(ValueError):
         AniListListProvider(config={})
+
+
+def test_entry_started_and_finished_setter_respects_user_timezone(
+    entry_factory: Callable[[Media], AniListListEntry],
+    fake_client: FakeAniListClient,
+    sample_media: Media,
+):
+    """Setting a tz-aware datetime stores date adjusted to user's timezone."""
+    entry = entry_factory(sample_media)
+    fake_client.user_timezone = timezone(timedelta(hours=-2))
+    input_dt = datetime(2024, 1, 2, 0, 30, tzinfo=UTC)
+
+    entry.started_at = input_dt
+    assert entry._entry.started_at == FuzzyDate.from_date(
+        input_dt.astimezone(fake_client.user_timezone)
+    )
+
+    entry.finished_at = input_dt
+    assert entry._entry.completed_at == FuzzyDate.from_date(
+        input_dt.astimezone(fake_client.user_timezone)
+    )
+
+
+def test_entry_started_and_finished_getter_returns_aware_datetime(
+    entry_factory: Callable[[Media], AniListListEntry],
+    fake_client: FakeAniListClient,
+    sample_media: Media,
+):
+    """Getter should return datetimes using the client's timezone information."""
+    entry = entry_factory(sample_media)
+
+    tz = timezone(timedelta(hours=9))
+    fake_client.user_timezone = tz
+
+    # Pre-populate the underlying entry as a simple date (no time information)
+    entry._entry.started_at = FuzzyDate.from_date(datetime(2024, 1, 4))
+    entry._entry.completed_at = FuzzyDate.from_date(datetime(2024, 1, 4))
+
+    assert isinstance(entry.started_at, datetime)
+    assert entry.started_at.tzinfo == tz
+
+    assert isinstance(entry.finished_at, datetime)
+    assert entry.finished_at.tzinfo == tz
 
 
 @pytest.mark.asyncio

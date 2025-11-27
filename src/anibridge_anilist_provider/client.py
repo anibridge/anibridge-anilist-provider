@@ -5,6 +5,7 @@ import contextlib
 import importlib.metadata
 import json
 from collections.abc import AsyncIterator
+from datetime import UTC, timedelta, timezone, tzinfo
 from logging import getLogger
 from typing import Any
 
@@ -61,6 +62,7 @@ class AniListClient:
         self._session: aiohttp.ClientSession | None = None
 
         self.user: User | None = None
+        self.user_timezone: tzinfo = UTC
         self.offline_anilist_entries: dict[int, Media] = {}
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -92,6 +94,17 @@ class AniListClient:
         """Initialize the client by getting user info and backing up data."""
         self.offline_anilist_entries.clear()
         self.user = await self.get_user()
+
+        # Timezone in "-?HH:MM" format
+        offset_str = self.user.user_options.timezone if self.user.user_options else None
+        if offset_str:
+            if offset_str[0] not in "+-":
+                offset_str = "+" + offset_str
+            sign = 1 if offset_str[0] == "+" else -1
+            hours, minutes = map(int, offset_str[1:].split(":"))
+            self.user_timezone = timezone(
+                sign * timedelta(hours=hours, minutes=minutes)
+            )
 
     async def get_user(self) -> User:
         """Retrieves the authenticated user's information from AniList.
