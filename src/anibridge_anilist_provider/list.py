@@ -11,6 +11,7 @@ from anibridge.list import (
     ListProvider,
     ListStatus,
     ListUser,
+    MediaMap,
     list_provider,
 )
 
@@ -105,6 +106,17 @@ class AnilistListProvider(ListProvider):
             media_id=media.id,
         )
         return AnilistListEntry(self, media=media, entry=entry)
+
+    def resolve_map(self, media_map: MediaMap) -> str:
+        """Resolve a media map to an AniList ID.
+
+        Args:
+            media_map (MediaMap): The media map to resolve.
+
+        Returns:
+            str: The resolved AniList ID.
+        """
+        return str(media_map.anilist_id)
 
     async def restore_list(self, backup: str) -> None:
         """Restore the list from a backup sequence of list entries.
