@@ -11,7 +11,7 @@ from anibridge.list import (
     ListProvider,
     ListStatus,
     ListUser,
-    MediaMap,
+    MappingGraph,
     list_provider,
 )
 
@@ -107,16 +107,35 @@ class AnilistListProvider(ListProvider):
         )
         return AnilistListEntry(self, media=media, entry=entry)
 
-    def resolve_map(self, media_map: MediaMap) -> str:
-        """Resolve a media map to an AniList ID.
+    def resolve_mappings(
+        self,
+        mapping: MappingGraph,
+        *,
+        scope: str | None = None,
+    ) -> str | None:
+        """Resolve a mapping graph to an AniList media key.
 
         Args:
-            media_map (MediaMap): The media map to resolve.
+            mapping (MappingGraph): The mapping graph to resolve.
+            scope (str | None): Optional scope to filter by (e.g., "movie").
 
         Returns:
-            str: The resolved AniList ID.
+            str | None: The resolved AniList media key, or None if not found.
         """
-        return str(media_map.anilist_id)
+        desired_scope = scope or "movie"
+        for edge in mapping.edges:
+            for descriptor in (edge.source, edge.destination):
+                if descriptor.provider != self.NAMESPACE:
+                    continue
+                if desired_scope and descriptor.scope != desired_scope:
+                    continue
+                return descriptor.entry_id
+
+        for descriptor in mapping.descriptors():
+            if descriptor.provider == self.NAMESPACE:
+                return descriptor.entry_id
+
+        return None
 
     async def restore_list(self, backup: str) -> None:
         """Restore the list from a backup sequence of list entries.
