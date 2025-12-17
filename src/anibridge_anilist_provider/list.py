@@ -11,6 +11,7 @@ from anibridge.list import (
     ListProvider,
     ListStatus,
     ListUser,
+    MappingDescriptor,
     MappingGraph,
     list_provider,
 )
@@ -112,7 +113,7 @@ class AnilistListProvider(ListProvider):
         mapping: MappingGraph,
         *,
         scope: str | None = None,
-    ) -> str | None:
+    ) -> MappingDescriptor | None:
         """Resolve a mapping graph to an AniList media key.
 
         Args:
@@ -120,20 +121,20 @@ class AnilistListProvider(ListProvider):
             scope (str | None): Optional scope to filter by (e.g., "movie").
 
         Returns:
-            str | None: The resolved AniList media key, or None if not found.
+            MappingDescriptor | None: The resolved mapping descriptor, or None if
+                no suitable descriptor could be found.
         """
-        desired_scope = scope or "movie"
         for edge in mapping.edges:
             for descriptor in (edge.source, edge.destination):
                 if descriptor.provider != self.NAMESPACE:
                     continue
-                if desired_scope and descriptor.scope != desired_scope:
+                if scope and descriptor.scope != scope:
                     continue
-                return descriptor.entry_id
+                return descriptor
 
         for descriptor in mapping.descriptors():
             if descriptor.provider == self.NAMESPACE:
-                return descriptor.entry_id
+                return descriptor
 
         return None
 
