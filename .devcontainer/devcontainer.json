@@ -8,6 +8,7 @@
     "customizations": {
         "vscode": {
             "extensions": [
+                "astral-sh.ty",
                 "charliermarsh.ruff",
                 "eamodio.gitlens",
                 "esbenp.prettier-vscode",
