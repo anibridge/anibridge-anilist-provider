@@ -100,7 +100,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.2" },
-    { name = "anibridge-list-interface", git = "https://github.com/anibridge/anibridge-list-interface.git" },
+    { name = "anibridge-list-interface", specifier = ">=0.1.1" },
     { name = "async-lru", specifier = ">=2.0.5" },
     { name = "limiter", specifier = ">=0.5.0" },
     { name = "pydantic", specifier = ">=2.12.4" },
@@ -120,7 +120,11 @@ dev = [
 [[package]]
 name = "anibridge-list-interface"
 version = "0.1.1"
-source = { git = "https://github.com/anibridge/anibridge-list-interface.git#6bab001b8bc80733714aea1c5a9482fd881943ff" }
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/85/79bb7120f54d8b53b36f5e2e66a4d3bcc1c454349a5c6e892cefdf95d037/anibridge_list_interface-0.1.1.tar.gz", hash = "sha256:06cf811ae89906562ec27f3fe0a01c222239fdbca3e2f71ca54f8a55d1bbfb8d", size = 7093, upload-time = "2026-01-03T09:36:49.582Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/71/f1836355f6b5c0bd55fef67ebfef5add91238dbe707599626d238e512521/anibridge_list_interface-0.1.1-py3-none-any.whl", hash = "sha256:e2f5f730dfdddc2bb0a342a678689a54d8039f1e6f7aa4c65cd1a6d384e5f698", size = 8585, upload-time = "2026-01-03T09:36:48.524Z" },
+]
 
 [[package]]
 name = "annotated-types"
