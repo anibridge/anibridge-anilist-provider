@@ -8,6 +8,9 @@ jobs:
   build-and-publish:
     environment: publish
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -20,5 +23,5 @@ jobs:
 
       - name: Publish to PyPI
         run: uv build && uv publish
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.UV_PUBLISH_TOKEN }}
+        # env:
+        #   UV_PUBLISH_TOKEN: ${{ secrets.UV_PUBLISH_TOKEN }}
