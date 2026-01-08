@@ -107,6 +107,15 @@ class MediaListStatus(AnilistBaseEnum):
         return self.__priority[self.value] >= self.__priority[other.value]
 
 
+class Season(AnilistBaseEnum):
+    """Enum representing the seasons of the year."""
+
+    WINTER = "WINTER"
+    SPRING = "SPRING"
+    SUMMER = "SUMMER"
+    FALL = "FALL"
+
+
 class ScoreFormat(AnilistBaseEnum):
     """Enum representing score formats for media list entries."""
 
@@ -427,6 +436,8 @@ class MediaWithoutList(AnilistBaseModel):
     # start_date: FuzzyDate | None = None
     # end_date: FuzzyDate | None = None
     # next_airing_episode: dict | None = None
+    season: Season | None = None
+    season_year: int | None = None
 
 
 class Media(MediaWithoutList):

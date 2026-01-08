@@ -303,6 +303,27 @@ class AnilistListMedia(ListMedia):
         )
 
     @property
+    def external_url(self) -> str | None:
+        """Return the external URL for the media on AniList."""
+        return "https://anilist.co/anime/" + str(self._key)
+
+    @property
+    def labels(self) -> Sequence[str]:
+        """Return any labels associated with the media."""
+        labels: list[str] = []
+        if self._media.season and self._media.season_year:
+            labels.append(
+                f"{self._media.season.value.title()} {self._media.season_year}"
+            )
+        elif self._media.season_year:
+            labels.append(str(self._media.season_year))
+        if self._media.format:
+            labels.append(self._media.format.value.replace("_", " ").title())
+        if self._media.status:
+            labels.append(self._media.status.value.replace("_", " ").title())
+        return labels
+
+    @property
     def media_type(self) -> ListMediaType:
         """Get the type of media (e.g., ANIME, MANGA)."""
         match self._media.format:
