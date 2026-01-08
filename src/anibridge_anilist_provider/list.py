@@ -297,8 +297,8 @@ class AnilistListMedia(ListMedia):
         self._provider = provider
         self._media = media
 
-        self.key = str(media.id)
-        self.title = (
+        self._key = str(media.id)
+        self._title = (
             media.title.romaji or media.title.english or "" if media.title else ""
         )
 
@@ -354,8 +354,8 @@ class AnilistListEntry(ListEntry):
         self._media = AnilistListMedia(provider, media)
         self._entry = entry
 
-        self.key = str(entry.id)
-        self.title = (
+        self._key = str(entry.id)
+        self._title = (
             media.title.romaji or media.title.english or "" if media.title else ""
         )
 

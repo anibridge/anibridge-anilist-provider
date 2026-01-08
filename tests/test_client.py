@@ -33,7 +33,7 @@ from anibridge_anilist_provider.models import (
 @pytest.fixture()
 def client() -> AnilistClient:
     """Return a fresh AnilistClient instance backed by the stubbed token."""
-    return AnilistClient(anilist_token="token", profile_name="pytest")
+    return AnilistClient(anilist_token="token")
 
 
 @pytest.mark.asyncio
@@ -57,7 +57,7 @@ async def test_get_session_creates_and_reuses_client_session(
         lambda *, headers: DummySession(headers=headers),
     )
 
-    stub_client = AnilistClient(anilist_token="abc", profile_name="pytest")
+    stub_client = AnilistClient(anilist_token="abc")
 
     session_one = await stub_client._get_session()
     assert created_headers[0]["Authorization"] == "Bearer abc"
@@ -83,7 +83,7 @@ async def test_close_ignores_already_closed_session():
             self.close_calls += 1
             self.closed = True
 
-    stub_client = AnilistClient(anilist_token="abc", profile_name="pytest")
+    stub_client = AnilistClient(anilist_token="abc")
     stub_client._session = cast(aiohttp.ClientSession, DummySession())
 
     await stub_client.close()
@@ -481,7 +481,7 @@ async def test_make_request_retries_rate_limit(monkeypatch: pytest.MonkeyPatch):
             _ResponseContext(200, payload={"data": {"ok": True}}),
         ]
     )
-    client = AnilistClient(anilist_token="token", profile_name="pytest")
+    client = AnilistClient(anilist_token="token")
     client._get_session = AsyncMock(return_value=session)
     sleep = AsyncMock()
     monkeypatch.setattr(asyncio, "sleep", sleep)
@@ -501,7 +501,7 @@ async def test_make_request_retries_bad_gateway(monkeypatch: pytest.MonkeyPatch)
             _ResponseContext(200, payload={"data": {"ok": 2}}),
         ]
     )
-    client = AnilistClient(anilist_token="token", profile_name="pytest")
+    client = AnilistClient(anilist_token="token")
     client._get_session = AsyncMock(return_value=session)
     monkeypatch.setattr(asyncio, "sleep", AsyncMock())
 
@@ -519,7 +519,7 @@ async def test_make_request_recovers_from_client_error(monkeypatch: pytest.Monke
             _ResponseContext(200, payload={"data": {"ok": 3}}),
         ]
     )
-    client = AnilistClient(anilist_token="token", profile_name="pytest")
+    client = AnilistClient(anilist_token="token")
     client._get_session = AsyncMock(return_value=session)
     monkeypatch.setattr(asyncio, "sleep", AsyncMock())
 
@@ -534,7 +534,7 @@ async def test_make_request_raises_after_three_failures(
 ):
     """_make_request should raise once the retry budget is exhausted."""
     session = _FakeSession([aiohttp.ClientError("boom")] * 4)
-    client = AnilistClient(anilist_token="token", profile_name="pytest")
+    client = AnilistClient(anilist_token="token")
     client._get_session = AsyncMock(return_value=session)
     monkeypatch.setattr(asyncio, "sleep", AsyncMock())
 

@@ -49,9 +49,6 @@ class AnilistClient:
 
         Args:
             anilist_token (str): Authentication token for AniList API.
-            profile_name (str | None): Owning profile name; optional in public mode
-            backup_retention_days (int | None): Days to retain backups before cleanup;
-                defaults to BACKUP_RETENTION_DAYS when None.
         """
         self.anilist_token = anilist_token
         self._session: aiohttp.ClientSession | None = None
