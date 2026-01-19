@@ -11,10 +11,10 @@ from anibridge.list import (
     ListProvider,
     ListStatus,
     ListUser,
-    MappingDescriptor,
-    MappingGraph,
+    MappingEdge,
     list_provider,
 )
+from anibridge.list.base import MappingResolution
 
 from anibridge_anilist_provider.client import AnilistClient
 from anibridge_anilist_provider.models import (
@@ -110,33 +110,23 @@ class AnilistListProvider(ListProvider):
 
     def resolve_mappings(
         self,
-        mapping: MappingGraph,
-        *,
-        scope: str | None = None,
-    ) -> MappingDescriptor | None:
-        """Resolve a mapping graph to an AniList media key.
+        edges: Sequence[MappingEdge],
+    ) -> Sequence[MappingResolution]:
+        """Resolve mapping edges to AniList media keys.
 
         Args:
-            mapping (MappingGraph): The mapping graph to resolve.
-            scope (str | None): Optional scope to filter by (e.g., "movie").
+            edges (Sequence[MappingEdge]): Mapping edges to resolve.
 
         Returns:
-            MappingDescriptor | None: The resolved mapping descriptor, or None if
-                no suitable descriptor could be found.
+            Sequence[MappingResolution]: Resolved descriptors with their edges.
         """
-        for edge in mapping.edges:
+        resolutions: list[MappingResolution] = []
+        for edge in edges:
             for descriptor in (edge.source, edge.destination):
-                if descriptor.provider != self.NAMESPACE:
+                if descriptor[0] != "anilist":
                     continue
-                if scope and descriptor.scope != scope:
-                    continue
-                return descriptor
-
-        for descriptor in mapping.descriptors():
-            if descriptor.provider == self.NAMESPACE:
-                return descriptor
-
-        return None
+                resolutions.append(MappingResolution(descriptor=descriptor, edge=edge))
+        return resolutions
 
     async def restore_list(self, backup: str) -> None:
         """Restore the list from a backup sequence of list entries.
