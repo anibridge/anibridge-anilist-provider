@@ -1,6 +1,6 @@
 [project]
 name = "anibridge-anilist-provider"
-version = "0.2.0b2"
+version = "0.2.0b3"
 description = "AniList provider for the AniBridge project."
 readme = "README.md"
 requires-python = ">=3.14"
