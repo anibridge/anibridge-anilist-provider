@@ -11,10 +11,8 @@ from anibridge.list import (
     ListProvider,
     ListStatus,
     ListUser,
-    MappingEdge,
     list_provider,
 )
-from anibridge.list.base import MappingResolution
 
 from anibridge_anilist_provider.client import AnilistClient
 from anibridge_anilist_provider.models import (
@@ -94,13 +92,6 @@ class AnilistListProvider(ListProvider):
             key (str): The media key of the entry to retrieve.
         """
         media = await self._client.get_anime(int(key))
-        if media.media_list_entry is None:
-            return None
-        return AnilistListEntry(self, media=media, entry=media.media_list_entry)
-
-    async def build_entry(self, key: str) -> AnilistListEntry:
-        """Construct an AniList list entry for the supplied media key."""
-        media = await self._client.get_anime(int(key))
         entry = media.media_list_entry or MediaList(
             id=0,
             user_id=self._client.user.id if self._client.user else 0,
@@ -108,25 +99,15 @@ class AnilistListProvider(ListProvider):
         )
         return AnilistListEntry(self, media=media, entry=entry)
 
-    def resolve_mappings(
-        self,
-        edges: Sequence[MappingEdge],
-    ) -> Sequence[MappingResolution]:
-        """Resolve mapping edges to AniList media keys.
-
-        Args:
-            edges (Sequence[MappingEdge]): Mapping edges to resolve.
-
-        Returns:
-            Sequence[MappingResolution]: Resolved descriptors with their edges.
-        """
-        resolutions: list[MappingResolution] = []
-        for edge in edges:
-            for descriptor in (edge.source, edge.destination):
-                if descriptor[0] != "anilist":
-                    continue
-                resolutions.append(MappingResolution(descriptor=descriptor, edge=edge))
-        return resolutions
+    async def derive_keys(
+        self, descriptors: Sequence[tuple[str, str, str | None]]
+    ) -> set[str]:
+        """Resolve mapping descriptors into AniList media keys."""
+        return {
+            entry_id
+            for provider, entry_id, _ in descriptors
+            if provider == self.NAMESPACE and entry_id
+        }
 
     async def restore_list(self, backup: str) -> None:
         """Restore the list from a backup sequence of list entries.
@@ -223,12 +204,15 @@ class AnilistListProvider(ListProvider):
         entries: list[AnilistListEntry | None] = []
         for key in keys:
             media = media_by_id.get(int(key))
-            if media is None or media.media_list_entry is None:
+            if media is None:
                 entries.append(None)
                 continue
-            entries.append(
-                AnilistListEntry(self, media=media, entry=media.media_list_entry)
+            entry = media.media_list_entry or MediaList(
+                id=0,
+                user_id=self._client.user.id if self._client.user else 0,
+                media_id=media.id,
             )
+            entries.append(AnilistListEntry(self, media=media, entry=entry))
         return entries
 
     async def _build_media_payload(
