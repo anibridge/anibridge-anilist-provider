@@ -74,9 +74,10 @@ class FakeAnilistClient:
         """Record an update payload for later inspection."""
         self.update_payloads.append(payload)
 
-    async def batch_update_anime_entries(self, payloads: list[MediaList]) -> None:
+    async def batch_update_anime_entries(self, payloads: list[MediaList]) -> set[int]:
         """Record a batch update payload for later inspection."""
         self.batch_update_payloads.append(payloads)
+        return {payload.media_id for payload in payloads}
 
     async def delete_anime_entry(self, entry_id: int, media_id: int) -> None:
         """Record delete requests for verification in tests."""

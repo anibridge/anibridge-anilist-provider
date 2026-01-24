@@ -160,7 +160,7 @@ class AnilistClient:
 
     async def batch_update_anime_entries(
         self, media_list_entries: list[MediaList]
-    ) -> None:
+    ) -> set[int]:
         """Updates multiple anime entries on the authenticated user's list.
 
         Sends a batch mutation to modify multiple existing anime entries in the user's
@@ -170,13 +170,18 @@ class AnilistClient:
             media_list_entries (list[MediaList]): List of updated AniList entries to
                 save.
 
+        Returns:
+            set[int]: The set of media IDs that were successfully updated.
+
         Raises:
             aiohttp.ClientError: If the API request fails.
         """
         BATCH_SIZE = 10
 
         if not media_list_entries:
-            return None
+            return set()
+
+        updated_media_ids: set[int] = set()
 
         for i in range(0, len(media_list_entries), BATCH_SIZE):
             batch = media_list_entries[i : i + BATCH_SIZE]
@@ -184,6 +189,8 @@ class AnilistClient:
                 f"Updating batch of anime entries "
                 f"$${{anilist_id: {[m.media_id for m in batch]}}}$$"
             )
+
+            entries_by_media_id = {entry.media_id: entry for entry in batch}
 
             variable_declarations = []
             mutation_fields = []
@@ -231,16 +238,52 @@ class AnilistClient:
             }}
             """
 
-            response: dict[str, dict[str, dict]] = await self._make_request(
-                query, json.dumps(variables)
-            )
+            try:
+                response: dict[str, dict[str, dict]] = await self._make_request(
+                    query, json.dumps(variables)
+                )
+            except aiohttp.ClientError as exc:
+                _LOG.warning(
+                    "Batch update failed; falling back to per-entry updates",
+                    exc_info=exc,
+                )
+                for entry in batch:
+                    try:
+                        await self.update_anime_entry(entry)
+                        updated_media_ids.add(entry.media_id)
+                    except aiohttp.ClientError as entry_exc:
+                        _LOG.warning(
+                            "Failed to update AniList entry %s",
+                            entry.media_id,
+                            exc_info=entry_exc,
+                        )
+                continue
 
-            for mutation_data in response["data"].values():
-                if "mediaId" not in mutation_data:
+            updated_in_batch: set[int] = set()
+            for mutation_data in response.get("data", {}).values():
+                if not mutation_data or "mediaId" not in mutation_data:
                     continue
-                self.offline_anilist_entries[mutation_data["mediaId"]] = (
+                media_id = mutation_data["mediaId"]
+                self.offline_anilist_entries[media_id] = (
                     self._media_list_entry_to_media(MediaListWithMedia(**mutation_data))
                 )
+                updated_in_batch.add(media_id)
+
+            updated_media_ids.update(updated_in_batch)
+            missing_ids = set(entries_by_media_id) - updated_in_batch
+            for media_id in missing_ids:
+                entry = entries_by_media_id[media_id]
+                try:
+                    await self.update_anime_entry(entry)
+                    updated_media_ids.add(media_id)
+                except aiohttp.ClientError as entry_exc:
+                    _LOG.warning(
+                        "Failed to update AniList entry %s",
+                        media_id,
+                        exc_info=entry_exc,
+                    )
+
+        return updated_media_ids
 
     async def delete_anime_entry(self, entry_id: int, media_id: int) -> bool:
         """Deletes an anime entry from the authenticated user's list.

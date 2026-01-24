@@ -174,15 +174,30 @@ class AnilistListProvider(ListProvider):
             Sequence[AnilistListEntry | None]: The sequence of updated entries.
         """
         payloads: list[MediaList] = []
+        media_ids: list[int] = []
         for entry in entries:
+            media_id = int(entry.media().key)
+            media_ids.append(media_id)
             payloads.append(
-                await self._build_media_payload(
-                    entry.media().key, cast(AnilistListEntry, entry)
-                )
+                await self._build_media_payload(media_id, cast(AnilistListEntry, entry))
             )
-        if payloads:
-            await self._client.batch_update_anime_entries(payloads)
-        return [None] * len(entries)
+        if not payloads:
+            return []
+
+        updated_media_ids = await self._client.batch_update_anime_entries(payloads)
+        results: list[AnilistListEntry | None] = []
+        for media_id in media_ids:
+            if media_id not in updated_media_ids:
+                results.append(None)
+                continue
+            media = await self._client.get_anime(media_id)
+            entry = media.media_list_entry or MediaList(
+                id=0,
+                user_id=self._client.user.id if self._client.user else 0,
+                media_id=media.id,
+            )
+            results.append(AnilistListEntry(self, media=media, entry=entry))
+        return results
 
     async def get_entries_batch(
         self, keys: Sequence[str]

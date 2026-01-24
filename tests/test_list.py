@@ -496,7 +496,10 @@ async def test_get_entry_returns_none_without_media_list(
     orphan.media_list_entry = None
     fake_client.medias[orphan.id] = orphan
 
-    assert await provider.get_entry(str(orphan.id)) is None
+    entry = await provider.get_entry(str(orphan.id))
+    assert entry is not None
+    assert isinstance(entry, AnilistListEntry)
+    assert entry.media().key == str(orphan.id)
 
 
 @pytest.mark.asyncio
@@ -542,8 +545,9 @@ async def test_build_entry_creates_placeholder_when_missing(
     orphan_media.media_list_entry = None
     fake_client.medias[orphan_media.id] = orphan_media
 
-    entry = await provider.build_entry(str(orphan_media.id))
+    entry = await provider.get_entry(str(orphan_media.id))
 
+    assert entry is not None
     assert entry.media().key == str(orphan_media.id)
     assert entry.progress == 0
     assert entry.status is None

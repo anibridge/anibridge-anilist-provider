@@ -557,7 +557,7 @@ def _media_list(media_id: int) -> MediaList:
 @pytest.mark.asyncio
 async def test_batch_update_anime_entries_handles_empty_input(client: AnilistClient):
     """batch_update_anime_entries should early-exit when given no entries."""
-    assert await client.batch_update_anime_entries([]) is None
+    assert await client.batch_update_anime_entries([]) == set()
 
 
 @pytest.mark.asyncio
