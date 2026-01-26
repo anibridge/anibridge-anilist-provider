@@ -10,6 +10,7 @@ from anibridge.list import (
     ListMediaType,
     ListProvider,
     ListStatus,
+    ListTarget,
     ListUser,
     list_provider,
 )
@@ -24,12 +25,15 @@ from anibridge_anilist_provider.models import (
     ScoreFormat,
 )
 
+__all__ = ["AnilistListProvider"]
+
 
 @list_provider
 class AnilistListProvider(ListProvider):
     """List provider implementation backed by the AniList GraphQL API."""
 
     NAMESPACE = "anilist"
+    MAPPING_PROVIDERS = frozenset({"anilist"})
 
     def __init__(self, *, config: dict | None = None) -> None:
         """Initialize the AniList list provider.
@@ -108,6 +112,24 @@ class AnilistListProvider(ListProvider):
             for provider, entry_id, _ in descriptors
             if provider == self.NAMESPACE and entry_id
         }
+
+    async def resolve_mapping_descriptors(
+        self, descriptors: Sequence[tuple[str, str, str | None]]
+    ) -> Sequence[ListTarget]:
+        """Resolve mapping descriptors into AniList media keys.
+
+        Args:
+            descriptors (Sequence[tuple[str, str, str | None]]): The mapping descriptors
+                to resolve.
+
+        Returns:
+            Sequence[ListTarget]: The sequence of resolved list targets in AniList.
+        """
+        return [
+            ListTarget(descriptor=(provider, entry_id, scope), media_key=entry_id)
+            for provider, entry_id, scope in descriptors
+            if provider in self.MAPPING_PROVIDERS and entry_id
+        ]
 
     async def restore_list(self, backup: str) -> None:
         """Restore the list from a backup sequence of list entries.
