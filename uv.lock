@@ -76,7 +76,7 @@ wheels = [
 
 [[package]]
 name = "anibridge-anilist-provider"
-version = "0.2.0b3"
+version = "0.2.0b4"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -98,7 +98,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.2" },
-    { name = "anibridge-list-base", specifier = ">=0.2.0b2" },
+    { name = "anibridge-list-base", specifier = ">=0.2.0b3" },
     { name = "async-lru", specifier = ">=2.0.5" },
     { name = "limiter", specifier = ">=0.5.0" },
     { name = "pydantic", specifier = ">=2.12.4" },
