@@ -523,12 +523,14 @@ class AnilistListEntry(ListEntry):
         res = self._entry.started_at.to_datetime()
         if res is None:
             return None
-        return res.astimezone(self._provider._client.user_timezone)
+        return res.replace(tzinfo=self._provider._client.user_timezone)
 
     @started_at.setter
     def started_at(self, value: datetime | None) -> None:
         """Update the recorded start date."""
-        if value is not None:
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=self._provider._client.user_timezone)
+        elif value is not None:
             value = value.astimezone(self._provider._client.user_timezone)
         self._entry.started_at = FuzzyDate.from_date(value)
 
@@ -540,12 +542,14 @@ class AnilistListEntry(ListEntry):
         res = self._entry.completed_at.to_datetime()
         if res is None:
             return None
-        return res.astimezone(self._provider._client.user_timezone)
+        return res.replace(tzinfo=self._provider._client.user_timezone)
 
     @finished_at.setter
     def finished_at(self, value: datetime | None) -> None:
         """Update the recorded finish date."""
-        if value is not None:
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=self._provider._client.user_timezone)
+        elif value is not None:
             value = value.astimezone(self._provider._client.user_timezone)
         self._entry.completed_at = FuzzyDate.from_date(value)
 
