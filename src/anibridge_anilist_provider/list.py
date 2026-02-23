@@ -12,6 +12,7 @@ from anibridge.list import (
     ListStatus,
     ListTarget,
     ListUser,
+    ProviderLogger,
     list_provider,
 )
 
@@ -35,37 +36,40 @@ class AnilistListProvider(ListProvider):
     NAMESPACE = "anilist"
     MAPPING_PROVIDERS = frozenset({"anilist"})
 
-    def __init__(self, *, config: dict | None = None) -> None:
+    def __init__(self, *, logger: ProviderLogger, config: dict | None = None) -> None:
         """Initialize the AniList list provider.
 
         Args:
+            logger (ProviderLogger): Injected AniBridge logger.
             config (dict | None): Optional configuration options for the provider.
         """
-        self.config = config or {}
+        super().__init__(logger=logger, config=config)
         token = self.config.get("token")
 
         if not token:
+            self.log.warning("AniList token is missing from provider configuration")
             raise ValueError("AniList token must be provided in the configuration")
 
-        self._client = AnilistClient(anilist_token=token)
+        self._client = AnilistClient(anilist_token=token, logger=self.log)
 
         self._user: ListUser | None = None
         self._score_format: ScoreFormat | None = None
 
     async def initialize(self) -> None:
         """Perform any asynchronous startup work before the provider is used."""
+        self.log.debug("Initializing AniList provider client")
         await self._client.initialize()
         user = await self._client.get_user()
-        if user is not None:
-            self._user = ListUser(
-                key=str(user.id),
-                title=user.name,
-            )
-            self._score_format = (
-                user.media_list_options.score_format
-                if user.media_list_options is not None
-                else ScoreFormat.POINT_100
-            )
+        self._user = ListUser(
+            key=str(user.id),
+            title=user.name,
+        )
+        self._score_format = (
+            user.media_list_options.score_format
+            if user.media_list_options is not None
+            else ScoreFormat.POINT_100
+        )
+        self.log.debug("AniList provider initialized for user id=%s", user.id)
 
     async def backup_list(self) -> str:
         """Backup the entire list from AniList.
@@ -83,11 +87,13 @@ class AnilistListProvider(ListProvider):
         """
         media = await self._client.get_anime(int(key))
         if not media.media_list_entry:
+            self.log.debug("No AniList entry exists for media key %s", key)
             return
         await self._client.delete_anime_entry(
             entry_id=media.media_list_entry.id,
             media_id=media.media_list_entry.media_id,
         )
+        self.log.debug("Deleted AniList entry for media key %s", key)
 
     async def get_entry(self, key: str) -> AnilistListEntry | None:
         """Retrieve a list entry by its media key.
@@ -137,6 +143,7 @@ class AnilistListProvider(ListProvider):
         Args:
             backup (str): The backup data as a string to be restored.
         """
+        self.log.debug("Restoring AniList backup payload")
         await self._client.restore_anilist(backup)
 
     async def search(self, query: str) -> Sequence[AnilistListEntry]:
@@ -156,6 +163,9 @@ class AnilistListProvider(ListProvider):
                 media_id=media.id,
             )
             results.append(AnilistListEntry(self, media=media, entry=entry))
+        self.log.debug(
+            "AniList search query=%r yielded %s entries", query, len(results)
+        )
         return results
 
     async def update_entry(self, key: str, entry: ListEntry) -> None:
@@ -167,6 +177,7 @@ class AnilistListProvider(ListProvider):
         """
         payload = await self._build_media_payload(key, cast(AnilistListEntry, entry))
         await self._client.update_anime_entry(payload)
+        self.log.debug("Updated AniList entry for media key %s", key)
 
     def user(self) -> ListUser | None:
         """Get the user associated with the list.
@@ -179,10 +190,12 @@ class AnilistListProvider(ListProvider):
     async def clear_cache(self) -> None:
         """Clear any cached data within the provider."""
         self._client.offline_anilist_entries.clear()
+        self.log.debug("Cleared AniList provider cache")
 
     async def close(self) -> None:
         """Perform any asynchronous cleanup work before the provider is closed."""
         await self._client.close()
+        self.log.debug("Closed AniList provider client")
 
     async def update_entries_batch(
         self, entries: Sequence[ListEntry]
@@ -219,6 +232,16 @@ class AnilistListProvider(ListProvider):
                 media_id=media.id,
             )
             results.append(AnilistListEntry(self, media=media, entry=entry))
+        failed_count = len([result for result in results if result is None])
+        if failed_count:
+            self.log.warning(
+                "AniList batch update completed with %s unresolved entries",
+                failed_count,
+            )
+        else:
+            self.log.debug(
+                "AniList batch update completed for %s entries", len(results)
+            )
         return results
 
     async def get_entries_batch(
@@ -234,6 +257,7 @@ class AnilistListProvider(ListProvider):
         """
         ids = [int(key) for key in keys]
         if not ids:
+            self.log.debug("AniList batch get called with no keys")
             return [None] * len(keys)
 
         medias = await self._client.batch_get_anime(ids)
@@ -250,6 +274,13 @@ class AnilistListProvider(ListProvider):
                 media_id=media.id,
             )
             entries.append(AnilistListEntry(self, media=media, entry=entry))
+        missing = len([entry for entry in entries if entry is None])
+        if missing:
+            self.log.warning(
+                "AniList batch get missing %s/%s requested entries", missing, len(keys)
+            )
+        else:
+            self.log.debug("AniList batch get resolved %s entries", len(entries))
         return entries
 
     async def _build_media_payload(

@@ -6,10 +6,10 @@ import importlib.metadata
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
-from logging import getLogger
 from typing import Any
 
 import aiohttp
+from anibridge.list import ProviderLogger
 from async_lru import alru_cache
 from limiter import Limiter
 
@@ -27,8 +27,6 @@ from anibridge_anilist_provider.models import (
 
 __all__ = ["AnilistClient"]
 
-_LOG = getLogger(__name__)
-
 # The rate limit for the AniList API *should* be 90 requests per minute, but in practice
 # it seems to be around 30 requests per minute
 anilist_limiter = Limiter(rate=30 / 60, capacity=3, jitter=False)
@@ -44,13 +42,15 @@ class AnilistClient:
 
     API_URL = "https://graphql.anilist.co"
 
-    def __init__(self, anilist_token: str) -> None:
+    def __init__(self, anilist_token: str, *, logger: ProviderLogger) -> None:
         """Initialize the AniList client.
 
         Args:
             anilist_token (str): Authentication token for AniList API.
+            logger (ProviderLogger): Injected provider logger.
         """
         self.anilist_token = anilist_token
+        self.log = logger
         self._session: aiohttp.ClientSession | None = None
 
         self.user: User | None = None
@@ -185,7 +185,7 @@ class AnilistClient:
 
         for i in range(0, len(media_list_entries), BATCH_SIZE):
             batch = media_list_entries[i : i + BATCH_SIZE]
-            _LOG.debug(
+            self.log.debug(
                 f"Updating batch of anime entries "
                 f"$${{anilist_id: {[m.media_id for m in batch]}}}$$"
             )
@@ -243,7 +243,7 @@ class AnilistClient:
                     query, json.dumps(variables)
                 )
             except aiohttp.ClientError as exc:
-                _LOG.warning(
+                self.log.warning(
                     "Batch update failed; falling back to per-entry updates",
                     exc_info=exc,
                 )
@@ -252,7 +252,7 @@ class AnilistClient:
                         await self.update_anime_entry(entry)
                         updated_media_ids.add(entry.media_id)
                     except aiohttp.ClientError as entry_exc:
-                        _LOG.warning(
+                        self.log.warning(
                             "Failed to update AniList entry %s",
                             entry.media_id,
                             exc_info=entry_exc,
@@ -277,7 +277,7 @@ class AnilistClient:
                     await self.update_anime_entry(entry)
                     updated_media_ids.add(media_id)
                 except aiohttp.ClientError as entry_exc:
-                    _LOG.warning(
+                    self.log.warning(
                         "Failed to update AniList entry %s",
                         media_id,
                         exc_info=entry_exc,
@@ -353,7 +353,7 @@ class AnilistClient:
             aiohttp.ClientError: If the API request fails.
         """
         kind = "all" if is_movie is None else ("movie" if is_movie else "show")
-        _LOG.debug(
+        self.log.debug(
             f"Searching for {kind} "
             f"with title $$'{search_str}'$$ that is releasing and has "
             f"{episodes or 'unknown'} episodes"
@@ -428,7 +428,7 @@ class AnilistClient:
             aiohttp.ClientError: If the API request fails.
         """
         if anilist_id in self.offline_anilist_entries:
-            _LOG.debug(
+            self.log.debug(
                 f"Pulling AniList data from local cache "
                 f"$${{anilist_id: {anilist_id}}}$$"
             )
@@ -442,7 +442,9 @@ class AnilistClient:
         }}
         """
 
-        _LOG.debug(f"Pulling AniList data from API $${{anilist_id: {anilist_id}}}$$")
+        self.log.debug(
+            f"Pulling AniList data from API $${{anilist_id: {anilist_id}}}$$"
+        )
 
         response = await self._make_request(query, {"id": anilist_id})
         result = Media(**response["data"]["Media"])
@@ -477,7 +479,7 @@ class AnilistClient:
 
         cached_ids = [id for id in anilist_ids if id in self.offline_anilist_entries]
         if cached_ids:
-            _LOG.debug(
+            self.log.debug(
                 f"Pulling AniList data from local cache in "
                 f"batched mode $${{anilist_ids: {cached_ids}}}$$"
             )
@@ -491,7 +493,7 @@ class AnilistClient:
 
         for i in range(0, len(missing_ids), BATCH_SIZE):
             batch_ids = missing_ids[i : i + BATCH_SIZE]
-            _LOG.debug(
+            self.log.debug(
                 f"Pulling AniList data from API in batched "
                 f"mode $${{anilist_ids: {batch_ids}}}$$"
             )
@@ -690,13 +692,15 @@ class AnilistClient:
             ) as response:
                 if response.status == 429:  # Handle rate limit retries
                     retry_after = int(response.headers.get("Retry-After", 60))
-                    _LOG.warning(f"Rate limit exceeded, waiting {retry_after} seconds")
+                    self.log.warning(
+                        f"Rate limit exceeded, waiting {retry_after} seconds"
+                    )
                     await asyncio.sleep(retry_after + 1)
                     return await self._make_request(
                         query=query, variables=variables, retry_count=retry_count + 1
                     )
                 elif response.status == 502:  # Bad Gateway
-                    _LOG.warning("Received 502 Bad Gateway, retrying")
+                    self.log.warning("Received 502 Bad Gateway, retrying")
                     await asyncio.sleep(1)
                     return await self._make_request(
                         query=query, variables=variables, retry_count=retry_count + 1
@@ -705,15 +709,15 @@ class AnilistClient:
                 try:
                     response.raise_for_status()
                 except aiohttp.ClientResponseError as e:
-                    _LOG.error("Failed to make request to AniList API")
+                    self.log.exception("Failed to make request to AniList API")
                     response_text = await response.text()
-                    _LOG.error(f"\t\t{response_text}")
+                    self.log.debug(f"\t\t{response_text}")
                     raise e
 
                 return await response.json()
 
-        except (TimeoutError, aiohttp.ClientError):
-            _LOG.error("Connection error while making request to AniList API")
+        except TimeoutError, aiohttp.ClientError:
+            self.log.exception("Connection error while making request to AniList API")
             await asyncio.sleep(1)
             return await self._make_request(
                 query=query, variables=variables, retry_count=retry_count + 1
