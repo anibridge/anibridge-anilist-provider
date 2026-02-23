@@ -76,7 +76,7 @@ wheels = [
 
 [[package]]
 name = "anibridge-anilist-provider"
-version = "0.2.0b5"
+version = "0.2.0b6"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
