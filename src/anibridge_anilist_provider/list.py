@@ -340,9 +340,7 @@ class AnilistListMedia(ListMedia):
         self._media = media
 
         self._key = str(media.id)
-        self._title = (
-            media.title.romaji or media.title.english or "" if media.title else ""
-        )
+        self._title = media.title.best_title() if media.title else ""
 
     @property
     def external_url(self) -> str | None:
@@ -418,9 +416,7 @@ class AnilistListEntry(ListEntry):
         self._entry = entry
 
         self._key = str(entry.id)
-        self._title = (
-            media.title.romaji or media.title.english or "" if media.title else ""
-        )
+        self._title = media.title.best_title() if media.title else ""
 
     @property
     def status(self) -> ListStatus | None:

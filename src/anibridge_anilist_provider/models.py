@@ -261,6 +261,10 @@ class MediaTitle(AnilistBaseModel):
         """
         return [getattr(self, t) for t in self.__class__.model_fields if t]
 
+    def best_title(self) -> str:
+        """Return the preferred title using AniList's user-preferred fallback."""
+        return self.user_preferred or self.romaji or self.english or self.native or ""
+
     def __str__(self) -> str:
         """Return the first available title or an empty string.
 
