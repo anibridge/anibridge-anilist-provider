@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import importlib.metadata
 import json
+import weakref
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
 from typing import Any
@@ -39,6 +40,7 @@ class AnilistClient:
     """
 
     API_URL = "https://graphql.anilist.co"
+    MEDIA_LIST_COLLECTION_TTL_SECONDS = 60
 
     def __init__(self, anilist_token: str, *, logger: ProviderLogger) -> None:
         """Initialize the AniList client.
@@ -54,6 +56,10 @@ class AnilistClient:
         self.user: User | None = None
         self.user_timezone: tzinfo = UTC
         self.offline_anilist_entries: dict[int, Media] = {}
+        self._cached_media_list_collection: MediaListCollectionWithMedia | None = None
+        self._cached_media_list_collection_user_id: int | None = None
+        self._cached_media_list_collection_at: float | None = None
+        self._cached_media_list_collection_gc_handle: asyncio.TimerHandle | None = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create the aiohttp session.
@@ -77,11 +83,12 @@ class AnilistClient:
 
     async def close(self):
         """Close the aiohttp session."""
+        self._clear_media_list_collection_cache()
         if self._session and not self._session.closed:
             await self._session.close()
 
     async def initialize(self):
-        """Initialize the client by getting user info and backing up data."""
+        """Initialize the client by getting user info and prefetching entries."""
         self.offline_anilist_entries.clear()
         self.user = await self.get_user()
 
@@ -95,6 +102,12 @@ class AnilistClient:
             self.user_timezone = timezone(
                 sign * timedelta(hours=hours, minutes=minutes)
             )
+
+        await self.prefetch_anilist_entries()
+
+    async def prefetch_anilist_entries(self) -> None:
+        """Prefetch all non-custom AniList entries into the local cache."""
+        await self._fetch_media_list_collection_with_media()
 
     async def get_user(self) -> User:
         """Retrieves the authenticated user's information from AniList.
@@ -540,38 +553,7 @@ class AnilistClient:
         if not self.user:
             raise aiohttp.ClientError("User information is required for deletions")
 
-        query = f"""
-        query MediaListCollection($userId: Int, $type: MediaType, $chunk: Int) {{
-            MediaListCollection(userId: $userId, type: $type, chunk: $chunk) {{
-                {MediaListCollectionWithMedia.model_dump_graphql()}
-            }}
-        }}
-        """
-
-        data = MediaListCollectionWithMedia(user=self.user, has_next_chunk=True)
-        variables: dict[str, Any] = {
-            "userId": self.user.id,
-            "type": "ANIME",
-            "chunk": 0,
-        }
-
-        while data.has_next_chunk:
-            response = await self._make_request(query, variables)
-            collection_data = response["data"]["MediaListCollection"]
-
-            new_data = MediaListCollectionWithMedia(**collection_data)
-
-            data.has_next_chunk = new_data.has_next_chunk
-            variables["chunk"] += 1
-
-            for li in new_data.lists:
-                if li.is_custom_list:
-                    continue
-                data.lists.append(li)
-                for entry in li.entries:
-                    self.offline_anilist_entries[entry.media_id] = (
-                        self._media_list_entry_to_media(entry)
-                    )
+        data = await self._fetch_media_list_collection_with_media()
 
         # To compress the backup file, remove the unecessary media field from each entry
         sanitized_lists: list[MediaListGroup] = []
@@ -602,6 +584,111 @@ class AnilistClient:
         )
 
         return data_without_media.model_dump_json()
+
+    async def _fetch_media_list_collection_with_media(
+        self,
+    ) -> MediaListCollectionWithMedia:
+        """Fetch all non-custom AniList list entries and populate local cache."""
+        if not self.user:
+            raise aiohttp.ClientError("User information is required for fetching lists")
+
+        now = asyncio.get_running_loop().time()
+        if (
+            self._cached_media_list_collection_at is not None
+            and now - self._cached_media_list_collection_at
+            > self.MEDIA_LIST_COLLECTION_TTL_SECONDS
+        ):
+            self._clear_media_list_collection_cache()
+
+        if (
+            self._cached_media_list_collection is not None
+            and self._cached_media_list_collection_user_id == self.user.id
+        ):
+            self._populate_offline_entries_from_collection(
+                self._cached_media_list_collection
+            )
+            return self._cached_media_list_collection
+
+        query = f"""
+        query MediaListCollection($userId: Int, $type: MediaType, $chunk: Int) {{
+            MediaListCollection(userId: $userId, type: $type, chunk: $chunk) {{
+                {MediaListCollectionWithMedia.model_dump_graphql()}
+            }}
+        }}
+        """
+
+        data = MediaListCollectionWithMedia(user=self.user, has_next_chunk=True)
+        variables: dict[str, Any] = {
+            "userId": self.user.id,
+            "type": "ANIME",
+            "chunk": 0,
+        }
+
+        while data.has_next_chunk:
+            response = await self._make_request(query, variables)
+            collection_data = response["data"]["MediaListCollection"]
+
+            new_data = MediaListCollectionWithMedia(**collection_data)
+
+            data.has_next_chunk = new_data.has_next_chunk
+            variables["chunk"] += 1
+
+            for li in new_data.lists:
+                if li.is_custom_list:
+                    continue
+                data.lists.append(li)
+
+        self._set_media_list_collection_cache(data=data, user_id=self.user.id)
+        self._populate_offline_entries_from_collection(data)
+
+        return data
+
+    def _set_media_list_collection_cache(
+        self, data: MediaListCollectionWithMedia, user_id: int
+    ) -> None:
+        """Store fetched media lists in short-lived cache and schedule cleanup."""
+        self._cached_media_list_collection = data
+        self._cached_media_list_collection_user_id = user_id
+        self._cached_media_list_collection_at = asyncio.get_running_loop().time()
+
+        if self._cached_media_list_collection_gc_handle is not None:
+            self._cached_media_list_collection_gc_handle.cancel()
+
+        ttl_seconds = self.MEDIA_LIST_COLLECTION_TTL_SECONDS
+        if ttl_seconds <= 0:
+            self._clear_media_list_collection_cache()
+            return
+
+        weak_self = weakref.ref(self)
+
+        def clear_cache_from_weakref() -> None:
+            instance = weak_self()
+            if instance is not None:
+                instance._clear_media_list_collection_cache()
+
+        self._cached_media_list_collection_gc_handle = (
+            asyncio.get_running_loop().call_later(ttl_seconds, clear_cache_from_weakref)
+        )
+
+    def _clear_media_list_collection_cache(self) -> None:
+        """Clear cached media-list collection and cancel pending cleanup timer."""
+        if self._cached_media_list_collection_gc_handle is not None:
+            self._cached_media_list_collection_gc_handle.cancel()
+            self._cached_media_list_collection_gc_handle = None
+
+        self._cached_media_list_collection = None
+        self._cached_media_list_collection_user_id = None
+        self._cached_media_list_collection_at = None
+
+    def _populate_offline_entries_from_collection(
+        self, data: MediaListCollectionWithMedia
+    ) -> None:
+        """Populate in-memory AniList entries from collection data."""
+        for li in data.lists:
+            for entry in li.entries:
+                self.offline_anilist_entries[entry.media_id] = (
+                    self._media_list_entry_to_media(entry)
+                )
 
     async def restore_anilist(self, backup: str) -> None:
         """Restores the user's AniList data from a JSON backup.
