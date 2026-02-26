@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import importlib.metadata
 import json
-import weakref
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
 from typing import Any
@@ -40,7 +39,6 @@ class AnilistClient:
     """
 
     API_URL = "https://graphql.anilist.co"
-    MEDIA_LIST_COLLECTION_TTL_SECONDS = 60
 
     def __init__(self, anilist_token: str, *, logger: ProviderLogger) -> None:
         """Initialize the AniList client.
@@ -56,10 +54,6 @@ class AnilistClient:
         self.user: User | None = None
         self.user_timezone: tzinfo = UTC
         self.offline_anilist_entries: dict[int, Media] = {}
-        self._cached_media_list_collection: MediaListCollectionWithMedia | None = None
-        self._cached_media_list_collection_user_id: int | None = None
-        self._cached_media_list_collection_at: float | None = None
-        self._cached_media_list_collection_gc_handle: asyncio.TimerHandle | None = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create the aiohttp session.
@@ -83,7 +77,6 @@ class AnilistClient:
 
     async def close(self):
         """Close the aiohttp session."""
-        self._clear_media_list_collection_cache()
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -592,23 +585,6 @@ class AnilistClient:
         if not self.user:
             raise aiohttp.ClientError("User information is required for fetching lists")
 
-        now = asyncio.get_running_loop().time()
-        if (
-            self._cached_media_list_collection_at is not None
-            and now - self._cached_media_list_collection_at
-            > self.MEDIA_LIST_COLLECTION_TTL_SECONDS
-        ):
-            self._clear_media_list_collection_cache()
-
-        if (
-            self._cached_media_list_collection is not None
-            and self._cached_media_list_collection_user_id == self.user.id
-        ):
-            self._populate_offline_entries_from_collection(
-                self._cached_media_list_collection
-            )
-            return self._cached_media_list_collection
-
         query = f"""
         query MediaListCollection($userId: Int, $type: MediaType, $chunk: Int) {{
             MediaListCollection(userId: $userId, type: $type, chunk: $chunk) {{
@@ -637,58 +613,12 @@ class AnilistClient:
                 if li.is_custom_list:
                     continue
                 data.lists.append(li)
-
-        self._set_media_list_collection_cache(data=data, user_id=self.user.id)
-        self._populate_offline_entries_from_collection(data)
+                for entry in li.entries:
+                    self.offline_anilist_entries[entry.media_id] = (
+                        self._media_list_entry_to_media(entry)
+                    )
 
         return data
-
-    def _set_media_list_collection_cache(
-        self, data: MediaListCollectionWithMedia, user_id: int
-    ) -> None:
-        """Store fetched media lists in short-lived cache and schedule cleanup."""
-        self._cached_media_list_collection = data
-        self._cached_media_list_collection_user_id = user_id
-        self._cached_media_list_collection_at = asyncio.get_running_loop().time()
-
-        if self._cached_media_list_collection_gc_handle is not None:
-            self._cached_media_list_collection_gc_handle.cancel()
-
-        ttl_seconds = self.MEDIA_LIST_COLLECTION_TTL_SECONDS
-        if ttl_seconds <= 0:
-            self._clear_media_list_collection_cache()
-            return
-
-        weak_self = weakref.ref(self)
-
-        def clear_cache_from_weakref() -> None:
-            instance = weak_self()
-            if instance is not None:
-                instance._clear_media_list_collection_cache()
-
-        self._cached_media_list_collection_gc_handle = (
-            asyncio.get_running_loop().call_later(ttl_seconds, clear_cache_from_weakref)
-        )
-
-    def _clear_media_list_collection_cache(self) -> None:
-        """Clear cached media-list collection and cancel pending cleanup timer."""
-        if self._cached_media_list_collection_gc_handle is not None:
-            self._cached_media_list_collection_gc_handle.cancel()
-            self._cached_media_list_collection_gc_handle = None
-
-        self._cached_media_list_collection = None
-        self._cached_media_list_collection_user_id = None
-        self._cached_media_list_collection_at = None
-
-    def _populate_offline_entries_from_collection(
-        self, data: MediaListCollectionWithMedia
-    ) -> None:
-        """Populate in-memory AniList entries from collection data."""
-        for li in data.lists:
-            for entry in li.entries:
-                self.offline_anilist_entries[entry.media_id] = (
-                    self._media_list_entry_to_media(entry)
-                )
 
     async def restore_anilist(self, backup: str) -> None:
         """Restores the user's AniList data from a JSON backup.
