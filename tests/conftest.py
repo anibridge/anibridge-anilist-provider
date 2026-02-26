@@ -1,5 +1,6 @@
 """Common pytest fixtures for the AniList provider test-suite."""
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import UTC
@@ -153,7 +154,8 @@ def fake_client(sample_media: Media, second_media: Media) -> FakeAnilistClient:
 def provider(fake_client: FakeAnilistClient) -> AnilistListProvider:
     """Return an AnilistListProvider wired to the fake client."""
     provider = AnilistListProvider(
-        config={"token": "fake-token", "profile_name": "pytest"}
+        logger=logging.getLogger("tests.provider"),
+        config={"token": "fake-token", "profile_name": "pytest"},
     )
     provider._client = cast(AnilistClient, fake_client)
     provider._score_format = ScoreFormat.POINT_10_DECIMAL
@@ -173,7 +175,10 @@ def entry_factory(provider: AnilistListProvider) -> Callable[[Media], AnilistLis
 
 @pytest.fixture(autouse=True)
 def disable_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Remove the rate limiter decorator so tests do not wait between retries."""
+    """Remove runtime wrappers so tests stay fast and loop-safe."""
     wrapped = getattr(AnilistClient._make_request, "__wrapped__", None)
     if wrapped is not None:
         monkeypatch.setattr(AnilistClient, "_make_request", wrapped)
+    search_wrapped = getattr(AnilistClient._search_anime, "__wrapped__", None)
+    if search_wrapped is not None:
+        monkeypatch.setattr(AnilistClient, "_search_anime", search_wrapped)

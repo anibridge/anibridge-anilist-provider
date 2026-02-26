@@ -1,5 +1,6 @@
 """Tests that focus on the AniList list provider behavior."""
 
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, cast
@@ -397,7 +398,7 @@ def test_entry_status_roundtrip(
 def test_provider_requires_token() -> None:
     """Provider construction without a token should raise a ValueError."""
     with pytest.raises(ValueError):
-        AnilistListProvider(config={})
+        AnilistListProvider(logger=logging.getLogger("tests.list"), config={})
 
 
 def test_entry_started_and_finished_setter_respects_user_timezone(
@@ -446,7 +447,9 @@ def test_entry_started_and_finished_getter_returns_aware_datetime(
 @pytest.mark.asyncio
 async def test_provider_initialize_sets_user_and_score_format() -> None:
     """Initialize should cache the provider user metadata and score format."""
-    provider = AnilistListProvider(config={"token": "abc"})
+    provider = AnilistListProvider(
+        logger=logging.getLogger("tests.list"), config={"token": "abc"}
+    )
     stub = StubAnilistClient()
     provider._client = cast(AnilistClient, stub)
 
@@ -462,7 +465,9 @@ async def test_provider_initialize_sets_user_and_score_format() -> None:
 @pytest.mark.asyncio
 async def test_backup_and_restore_list_delegate_to_client() -> None:
     """backup_list and restore_list should proxy to the underlying client."""
-    provider = AnilistListProvider(config={"token": "abc"})
+    provider = AnilistListProvider(
+        logger=logging.getLogger("tests.list"), config={"token": "abc"}
+    )
     stub = StubAnilistClient()
     provider._client = cast(AnilistClient, stub)
 
@@ -476,7 +481,9 @@ async def test_backup_and_restore_list_delegate_to_client() -> None:
 @pytest.mark.asyncio
 async def test_provider_close_forwards_to_client() -> None:
     """Close should call through to the AniList client."""
-    provider = AnilistListProvider(config={"token": "abc"})
+    provider = AnilistListProvider(
+        logger=logging.getLogger("tests.list"), config={"token": "abc"}
+    )
     stub = StubAnilistClient()
     provider._client = cast(AnilistClient, stub)
 

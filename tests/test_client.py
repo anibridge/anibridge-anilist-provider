@@ -2,11 +2,10 @@
 
 import asyncio
 import json
+import logging
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any, cast
-from unittest import mock
-from unittest.mock import AsyncMock
 
 import aiohttp
 import pytest
@@ -33,7 +32,9 @@ from anibridge_anilist_provider.models import (
 @pytest.fixture()
 def client() -> AnilistClient:
     """Return a fresh AnilistClient instance backed by the stubbed token."""
-    return AnilistClient(anilist_token="token")
+    return AnilistClient(
+        anilist_token="token", logger=logging.getLogger("tests.client")
+    )
 
 
 @pytest.mark.asyncio
@@ -57,7 +58,9 @@ async def test_get_session_creates_and_reuses_client_session(
         lambda *, headers: DummySession(headers=headers),
     )
 
-    stub_client = AnilistClient(anilist_token="abc")
+    stub_client = AnilistClient(
+        anilist_token="abc", logger=logging.getLogger("tests.client")
+    )
 
     session_one = await stub_client._get_session()
     assert created_headers[0]["Authorization"] == "Bearer abc"
@@ -83,7 +86,9 @@ async def test_close_ignores_already_closed_session():
             self.close_calls += 1
             self.closed = True
 
-    stub_client = AnilistClient(anilist_token="abc")
+    stub_client = AnilistClient(
+        anilist_token="abc", logger=logging.getLogger("tests.client")
+    )
     stub_client._session = cast(aiohttp.ClientSession, DummySession())
 
     await stub_client.close()
@@ -99,12 +104,24 @@ async def test_initialize_fetches_user_and_clears_cache(
     """Initialize should reset the cache and store the fetched user object."""
     fake_user = User.model_construct(id=999, name="Init User")
     client.offline_anilist_entries[1] = media_factory(1, "cached")
-    client.get_user = AsyncMock(return_value=fake_user)
+
+    async def fake_get_user() -> User:
+        return fake_user
+
+    prefetch_calls = 0
+
+    async def fake_prefetch() -> None:
+        nonlocal prefetch_calls
+        prefetch_calls += 1
+
+    client.get_user = fake_get_user  # type: ignore[method-assign]
+    client.prefetch_anilist_entries = fake_prefetch  # type: ignore[method-assign]
 
     await client.initialize()
 
     assert client.user == fake_user
     assert client.offline_anilist_entries == {}
+    assert prefetch_calls == 1
 
 
 @pytest.mark.asyncio
@@ -113,33 +130,198 @@ async def test_initialize_parses_user_timezone_offset(client: AnilistClient):
 
     It should accept timezone offsets both with and without a leading sign.
     """
+
     # timezone without a sign should be treated as positive
-    client.get_user = AsyncMock(
-        return_value=User.model_construct(
+    async def first_user() -> User:
+        return User.model_construct(
             id=1, name="tz", options=UserOptions(timezone="02:30")
         )
-    )
+
+    async def noop_prefetch() -> None:
+        return None
+
+    client.get_user = first_user  # type: ignore[method-assign]
+    client.prefetch_anilist_entries = noop_prefetch  # type: ignore[method-assign]
 
     await client.initialize()
 
     assert client.user_timezone.utcoffset(None) == timedelta(hours=2, minutes=30)
 
     # negative offsets should also be parsed correctly
-    client.get_user = AsyncMock(
-        return_value=User.model_construct(
+    async def second_user() -> User:
+        return User.model_construct(
             id=1, name="tz", options=UserOptions(timezone="-05:00")
         )
-    )
+
+    client.get_user = second_user  # type: ignore[method-assign]
     await client.initialize()
 
     assert client.user_timezone.utcoffset(None) == timedelta(hours=-5)
 
 
 @pytest.mark.asyncio
+async def test_prefetch_anilist_entries_populates_cache(client: AnilistClient):
+    """prefetch_anilist_entries should load non-custom entries into cache."""
+    user = User.model_construct(id=1, name="Prefetch Tester")
+    client.user = user
+
+    saved_entry = _build_saved_entry(404, "prefetch show")
+    list_with_media = MediaListGroupWithMedia.model_construct(
+        entries=[saved_entry],
+        name="Plan to Watch",
+        is_custom_list=False,
+        status=MediaListStatus.PLANNING,
+    )
+    custom_group = MediaListGroupWithMedia.model_construct(
+        entries=[_build_saved_entry(999, "custom skip")],
+        name="Custom",
+        is_custom_list=True,
+        status=MediaListStatus.CURRENT,
+    )
+    collection = MediaListCollectionWithMedia.model_construct(
+        user=user,
+        lists=[list_with_media, custom_group],
+        has_next_chunk=False,
+    )
+
+    async def fake_request(
+        _query: str, variables: dict | None = None, **_: Any
+    ) -> dict:
+        assert variables == {"userId": 1, "type": "ANIME", "chunk": 0}
+        return {"data": {"MediaListCollection": collection.model_dump()}}
+
+    client._make_request = fake_request  # type: ignore
+
+    await client.prefetch_anilist_entries()
+
+    assert 404 in client.offline_anilist_entries
+    assert 999 not in client.offline_anilist_entries
+
+
+@pytest.mark.asyncio
+async def test_backup_reuses_recent_prefetch_collection(client: AnilistClient):
+    """backup_anilist should reuse a recent prefetch fetch within TTL."""
+    user = User.model_construct(id=1, name="Prefetch Backup Tester")
+    client.user = user
+
+    saved_entry = _build_saved_entry(404, "prefetch backup show")
+    list_with_media = MediaListGroupWithMedia.model_construct(
+        entries=[saved_entry],
+        name="Plan to Watch",
+        is_custom_list=False,
+        status=MediaListStatus.PLANNING,
+    )
+    collection = MediaListCollectionWithMedia.model_construct(
+        user=user,
+        lists=[list_with_media],
+        has_next_chunk=False,
+    )
+
+    request_calls = 0
+
+    async def fake_request(
+        _query: str, variables: dict | None = None, **_: Any
+    ) -> dict:
+        nonlocal request_calls
+        request_calls += 1
+        assert variables == {"userId": 1, "type": "ANIME", "chunk": 0}
+        return {"data": {"MediaListCollection": collection.model_dump()}}
+
+    client._make_request = fake_request  # type: ignore[method-assign]
+
+    await client.prefetch_anilist_entries()
+    client.offline_anilist_entries.clear()
+
+    backup_payload = await client.backup_anilist()
+    parsed = json.loads(backup_payload)
+
+    assert request_calls == 1
+    assert parsed["lists"][0]["entries"][0]["mediaId"] == 404
+    assert 404 in client.offline_anilist_entries
+
+
+@pytest.mark.asyncio
+async def test_backup_refetches_after_prefetch_ttl_expires(client: AnilistClient):
+    """backup_anilist should refetch once the prefetch cache TTL has expired."""
+    user = User.model_construct(id=1, name="TTL Expiry Tester")
+    client.user = user
+    client.MEDIA_LIST_COLLECTION_TTL_SECONDS = 0.001
+
+    saved_entry = _build_saved_entry(777, "ttl show")
+    list_with_media = MediaListGroupWithMedia.model_construct(
+        entries=[saved_entry],
+        name="Plan to Watch",
+        is_custom_list=False,
+        status=MediaListStatus.PLANNING,
+    )
+    collection = MediaListCollectionWithMedia.model_construct(
+        user=user,
+        lists=[list_with_media],
+        has_next_chunk=False,
+    )
+
+    request_calls = 0
+
+    async def fake_request(
+        _query: str, variables: dict | None = None, **_: Any
+    ) -> dict:
+        nonlocal request_calls
+        request_calls += 1
+        assert variables == {"userId": 1, "type": "ANIME", "chunk": 0}
+        return {"data": {"MediaListCollection": collection.model_dump()}}
+
+    client._make_request = fake_request  # type: ignore[method-assign]
+
+    await client.prefetch_anilist_entries()
+    await asyncio.sleep(0.01)
+    await client.backup_anilist()
+
+    assert request_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_close_clears_media_list_collection_cache(client: AnilistClient):
+    """Close should clear in-memory media list cache and cleanup timer handle."""
+    user = User.model_construct(id=1, name="Close Cache Tester")
+    client.user = user
+
+    saved_entry = _build_saved_entry(555, "close cache show")
+    list_with_media = MediaListGroupWithMedia.model_construct(
+        entries=[saved_entry],
+        name="Plan to Watch",
+        is_custom_list=False,
+        status=MediaListStatus.PLANNING,
+    )
+    collection = MediaListCollectionWithMedia.model_construct(
+        user=user,
+        lists=[list_with_media],
+        has_next_chunk=False,
+    )
+
+    async def fake_request(
+        _query: str, variables: dict | None = None, **_: Any
+    ) -> dict:
+        assert variables == {"userId": 1, "type": "ANIME", "chunk": 0}
+        return {"data": {"MediaListCollection": collection.model_dump()}}
+
+    client._make_request = fake_request  # type: ignore[method-assign]
+
+    await client.prefetch_anilist_entries()
+    assert client._cached_media_list_collection is not None
+    assert client._cached_media_list_collection_gc_handle is not None
+
+    await client.close()
+
+    assert client._cached_media_list_collection is None
+    assert client._cached_media_list_collection_gc_handle is None
+
+
+@pytest.mark.asyncio
 async def test_get_user_returns_viewer_payload(client: AnilistClient):
     """Get_user should deserialize the Viewer response into a User model."""
-    client._make_request = AsyncMock(
-        return_value={
+
+    async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
+        return {
             "data": {
                 "Viewer": {
                     "id": 42,
@@ -148,7 +330,8 @@ async def test_get_user_returns_viewer_payload(client: AnilistClient):
                 }
             }
         }
-    )
+
+    client._make_request = fake_request  # type: ignore[method-assign]
 
     viewer = await client.get_user()
 
@@ -161,12 +344,15 @@ async def test_get_anime_prefers_cached_entry(client: AnilistClient, media_facto
     """get_anime should avoid the network when a cached entry exists."""
     cached_media: Media = media_factory(999, "cached show")
     client.offline_anilist_entries[cached_media.id] = cached_media
-    client._make_request = AsyncMock()
+
+    async def should_not_call(*_args: Any, **_kwargs: Any) -> dict:
+        raise AssertionError("Network should not be called for cached anime")
+
+    client._make_request = should_not_call  # type: ignore[method-assign]
 
     result = await client.get_anime(cached_media.id)
 
     assert result is cached_media
-    client._make_request.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -205,12 +391,15 @@ async def test_batch_get_anime_returns_cached_when_all_present(
     first = media_factory(10, "alpha")
     second = media_factory(20, "beta")
     client.offline_anilist_entries = {first.id: first, second.id: second}
-    client._make_request = AsyncMock()
+
+    async def should_not_call(*_args: Any, **_kwargs: Any) -> dict:
+        raise AssertionError("Network should not be called when all entries are cached")
+
+    client._make_request = should_not_call  # type: ignore[method-assign]
 
     results = await client.batch_get_anime([first.id, second.id])
 
     assert results == [first, second]
-    client._make_request.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -236,9 +425,10 @@ async def test_search_anime_filters_episode_and_status(
     skipped.status = MediaStatus.FINISHED
     skipped.episodes = 12
 
-    client._search_anime = AsyncMock(
-        return_value=[releasing, finished_matching, skipped]
-    )
+    async def fake_search(*_args: Any, **_kwargs: Any) -> list[Media]:
+        return [releasing, finished_matching, skipped]
+
+    client._search_anime = fake_search  # type: ignore[method-assign]
 
     results: list[Media] = []
     async for media in client.search_anime("foo", is_movie=None, episodes=24):
@@ -256,7 +446,10 @@ async def test_search_anime_without_episode_filter_returns_all(
     finished.status = MediaStatus.FINISHED
     finished.episodes = 12
 
-    client._search_anime = AsyncMock(return_value=[finished])
+    async def fake_search(*_args: Any, **_kwargs: Any) -> list[Media]:
+        return [finished]
+
+    client._search_anime = fake_search  # type: ignore[method-assign]
 
     results = [media async for media in client.search_anime("foo", is_movie=False)]
 
@@ -289,9 +482,10 @@ async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
     entry = MediaList(id=10, user_id=1, media_id=777, status=MediaListStatus.CURRENT)
     saved_entry = _build_saved_entry(entry.media_id, "cache me")
 
-    client._make_request = AsyncMock(
-        return_value={"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
-    )
+    async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
+        return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
+
+    client._make_request = fake_request  # type: ignore[method-assign]
 
     await client.update_anime_entry(entry)
 
@@ -322,7 +516,7 @@ async def test_delete_anime_entry_removes_cache(
     async def fake_request(*_: Any, **__: Any) -> dict:
         return {"data": {"DeleteMediaListEntry": {"deleted": True}}}
 
-    client._make_request = fake_request
+    client._make_request = fake_request  # type: ignore[method-assign]
 
     deleted = await client.delete_anime_entry(media.media_list_entry.id, media.id)
 
@@ -396,13 +590,19 @@ async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
     )
     backup = collection.model_dump_json()
 
-    client.batch_update_anime_entries = AsyncMock()
+    recorded_entries: list[MediaList] | None = None
+
+    async def fake_batch_update(entries: list[MediaList]) -> set[int]:
+        nonlocal recorded_entries
+        recorded_entries = entries
+        return {entry.media_id for entry in entries}
+
+    client.batch_update_anime_entries = fake_batch_update  # type: ignore[method-assign]
 
     await client.restore_anilist(backup)
 
-    client.batch_update_anime_entries.assert_awaited_once()
-    args, _ = client.batch_update_anime_entries.call_args
-    assert isinstance(args[0][0], MediaList)
+    assert recorded_entries is not None
+    assert isinstance(recorded_entries[0], MediaList)
 
 
 @pytest.mark.asyncio
@@ -442,7 +642,7 @@ class _ResponseContext:
     def raise_for_status(self) -> None:
         if self._raise_error:
             raise aiohttp.ClientResponseError(
-                request_info=mock.Mock(),
+                request_info=cast(Any, None),
                 history=(),
                 status=self.status,
                 message="boom",
@@ -481,15 +681,26 @@ async def test_make_request_retries_rate_limit(monkeypatch: pytest.MonkeyPatch):
             _ResponseContext(200, payload={"data": {"ok": True}}),
         ]
     )
-    client = AnilistClient(anilist_token="token")
-    client._get_session = AsyncMock(return_value=session)
-    sleep = AsyncMock()
-    monkeypatch.setattr(asyncio, "sleep", sleep)
+    client = AnilistClient(
+        anilist_token="token", logger=logging.getLogger("tests.client")
+    )
+
+    async def fake_get_session() -> _FakeSession:
+        return session
+
+    sleep_calls = 0
+
+    async def fake_sleep(_seconds: float) -> None:
+        nonlocal sleep_calls
+        sleep_calls += 1
+
+    client._get_session = fake_get_session  # type: ignore[method-assign]
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     result = await client._make_request("query")
 
     assert result["data"]["ok"] is True
-    sleep.assert_awaited()
+    assert sleep_calls >= 1
 
 
 @pytest.mark.asyncio
@@ -501,9 +712,18 @@ async def test_make_request_retries_bad_gateway(monkeypatch: pytest.MonkeyPatch)
             _ResponseContext(200, payload={"data": {"ok": 2}}),
         ]
     )
-    client = AnilistClient(anilist_token="token")
-    client._get_session = AsyncMock(return_value=session)
-    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+    client = AnilistClient(
+        anilist_token="token", logger=logging.getLogger("tests.client")
+    )
+
+    async def fake_get_session() -> _FakeSession:
+        return session
+
+    async def fake_sleep(_seconds: float) -> None:
+        return None
+
+    client._get_session = fake_get_session  # type: ignore[method-assign]
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     result = await client._make_request("query")
 
@@ -519,9 +739,18 @@ async def test_make_request_recovers_from_client_error(monkeypatch: pytest.Monke
             _ResponseContext(200, payload={"data": {"ok": 3}}),
         ]
     )
-    client = AnilistClient(anilist_token="token")
-    client._get_session = AsyncMock(return_value=session)
-    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+    client = AnilistClient(
+        anilist_token="token", logger=logging.getLogger("tests.client")
+    )
+
+    async def fake_get_session() -> _FakeSession:
+        return session
+
+    async def fake_sleep(_seconds: float) -> None:
+        return None
+
+    client._get_session = fake_get_session  # type: ignore[method-assign]
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     result = await client._make_request("query")
 
@@ -534,9 +763,18 @@ async def test_make_request_raises_after_three_failures(
 ):
     """_make_request should raise once the retry budget is exhausted."""
     session = _FakeSession([aiohttp.ClientError("boom")] * 4)
-    client = AnilistClient(anilist_token="token")
-    client._get_session = AsyncMock(return_value=session)
-    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+    client = AnilistClient(
+        anilist_token="token", logger=logging.getLogger("tests.client")
+    )
+
+    async def fake_get_session() -> _FakeSession:
+        return session
+
+    async def fake_sleep(_seconds: float) -> None:
+        return None
+
+    client._get_session = fake_get_session  # type: ignore[method-assign]
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     with pytest.raises(aiohttp.ClientError):
         await client._make_request("query")
@@ -566,7 +804,9 @@ async def test_batch_update_anime_entries_updates_cache(client: AnilistClient):
     entries = [_media_list(i) for i in range(1, 12)]
     calls = 0
 
-    async def fake_request(query: str, variables: str | None = None, **_: Any) -> dict:
+    async def fake_request(
+        query: str, variables: str | None = None, retry_count: int = 0, **_: Any
+    ) -> dict:
         nonlocal calls
         start = calls * 10
         chunk = entries[start : start + 10]
@@ -602,9 +842,11 @@ async def test_get_anime_fetches_from_api_when_not_cached(
 ):
     """get_anime should call out to AniList when the cache is missing the id."""
     media = media_factory(505, "api show")
-    client._make_request = AsyncMock(
-        return_value={"data": {"Media": media.model_dump()}}
-    )
+
+    async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
+        return {"data": {"Media": media.model_dump()}}
+
+    client._make_request = fake_request  # type: ignore[method-assign]
 
     result = await client.get_anime(media.id)
 
@@ -621,7 +863,9 @@ async def test_batch_get_anime_mixed_cache_uses_network(
     missing = media_factory(2, "missing")
     client.offline_anilist_entries[cached.id] = cached
 
-    async def fake_request(query: str, variables: dict | None = None, **_: Any) -> dict:
+    async def fake_request(
+        query: str, variables: dict | None = None, retry_count: int = 0, **_: Any
+    ) -> dict:
         assert variables == {"ids": [missing.id]}
         return {
             "data": {
@@ -644,7 +888,9 @@ async def test__search_anime_uses_movie_formats(client: AnilistClient):
     """_search_anime should restrict formats to movies when requested."""
     captured: dict[str, Any] = {}
 
-    async def fake_request(query: str, variables: dict | None = None, **_: Any) -> dict:
+    async def fake_request(
+        query: str, variables: dict | None = None, retry_count: int = 0, **_: Any
+    ) -> dict:
         captured.update(variables or {})
         return {"data": {"Page": {"media": []}}}
 
@@ -660,7 +906,9 @@ async def test__search_anime_uses_show_formats(client: AnilistClient):
     """_search_anime should restrict formats to shows when requested."""
     captured: dict[str, Any] = {}
 
-    async def fake_request(query: str, variables: dict | None = None, **_: Any) -> dict:
+    async def fake_request(
+        query: str, variables: dict | None = None, retry_count: int = 0, **_: Any
+    ) -> dict:
         captured.update(variables or {})
         return {"data": {"Page": {"media": []}}}
 
