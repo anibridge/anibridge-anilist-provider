@@ -12,9 +12,8 @@ from anibridge.list import (
     ListStatus,
     ListTarget,
     ListUser,
-    ProviderLogger,
-    list_provider,
 )
+from anibridge.utils.types import ProviderLogger
 
 from anibridge_anilist_provider.client import AnilistClient
 from anibridge_anilist_provider.models import (
@@ -29,7 +28,6 @@ from anibridge_anilist_provider.models import (
 __all__ = ["AnilistListProvider"]
 
 
-@list_provider
 class AnilistListProvider(ListProvider):
     """List provider implementation backed by the AniList GraphQL API."""
 

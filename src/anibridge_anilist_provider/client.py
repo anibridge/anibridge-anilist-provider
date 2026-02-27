@@ -9,8 +9,9 @@ from datetime import UTC, timedelta, timezone, tzinfo
 from typing import Any
 
 import aiohttp
-from anibridge.list import ProviderLogger
-from async_lru import alru_cache
+from anibridge.utils.cache import ttl_cache
+from anibridge.utils.limiter import Limiter
+from anibridge.utils.types import ProviderLogger
 
 from anibridge_anilist_provider.models import (
     Media,
@@ -26,8 +27,8 @@ from anibridge_anilist_provider.models import (
 
 __all__ = ["AnilistClient"]
 
-# The rate limit for the AniList API *should* be 90 requests per minute, but in practice
-# it seems to be around 30 requests per minute
+# Rate limit of 30 req/min with a burst capacity of 4
+anilist_limiter = Limiter(rate=30 / 60, capacity=4)
 
 
 class AnilistClient:
@@ -372,7 +373,7 @@ class AnilistClient:
             ):
                 yield m
 
-    @alru_cache(ttl=300)
+    @ttl_cache(ttl=300)
     async def _search_anime(
         self, search_str: str, is_movie: bool | None, limit: int = 10
     ) -> list[Media]:
@@ -667,6 +668,7 @@ class AnilistClient:
             },
         )
 
+    @anilist_limiter
     async def _make_request(
         self, query: str, variables: dict | str | None = None, retry_count: int = 0
     ) -> dict:
