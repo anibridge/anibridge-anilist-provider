@@ -1,5 +1,5 @@
 """AniList provider for AniBridge."""
 
-from anibridge_anilist_provider.list import AnilistListProvider
+from anibridge.providers.list.anilist.list import AnilistListProvider
 
 __all__ = ["AnilistListProvider"]

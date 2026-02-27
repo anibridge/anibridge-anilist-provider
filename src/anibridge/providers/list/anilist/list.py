@@ -15,8 +15,8 @@ from anibridge.list import (
 )
 from anibridge.utils.types import ProviderLogger
 
-from anibridge_anilist_provider.client import AnilistClient
-from anibridge_anilist_provider.models import (
+from anibridge.providers.list.anilist.client import AnilistClient
+from anibridge.providers.list.anilist.models import (
     FuzzyDate,
     Media,
     MediaFormat,

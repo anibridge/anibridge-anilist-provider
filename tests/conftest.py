@@ -8,9 +8,9 @@ from typing import cast
 
 import pytest
 
-from anibridge_anilist_provider.client import AnilistClient
-from anibridge_anilist_provider.list import AnilistListEntry, AnilistListProvider
-from anibridge_anilist_provider.models import (
+from anibridge.providers.list.anilist.client import AnilistClient
+from anibridge.providers.list.anilist.list import AnilistListEntry, AnilistListProvider
+from anibridge.providers.list.anilist.models import (
     Media,
     MediaCoverImage,
     MediaFormat,

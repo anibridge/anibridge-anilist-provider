@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from anibridge.list import ListMediaType, ListStatus
 
-from anibridge_anilist_provider.client import AnilistClient
-from anibridge_anilist_provider.list import (
+from anibridge.providers.list.anilist.client import AnilistClient
+from anibridge.providers.list.anilist.list import (
     AnilistListEntry,
     AnilistListMedia,
     AnilistListProvider,
 )
-from anibridge_anilist_provider.models import (
+from anibridge.providers.list.anilist.models import (
     FuzzyDate,
     Media,
     MediaCoverImage,
@@ -23,7 +23,7 @@ from anibridge_anilist_provider.models import (
     MediaListStatus,
     ScoreFormat,
 )
-from anibridge_anilist_provider.models import (
+from anibridge.providers.list.anilist.models import (
     User as AnilistAPIUser,
 )
 

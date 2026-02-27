@@ -10,8 +10,8 @@ from typing import Any, cast
 import aiohttp
 import pytest
 
-from anibridge_anilist_provider.client import AnilistClient
-from anibridge_anilist_provider.models import (
+from anibridge.providers.list.anilist.client import AnilistClient
+from anibridge.providers.list.anilist.models import (
     Media,
     MediaFormat,
     MediaList,
@@ -54,7 +54,7 @@ async def test_get_session_creates_and_reuses_client_session(
             self.closed = True
 
     monkeypatch.setattr(
-        "anibridge_anilist_provider.client.aiohttp.ClientSession",
+        "anibridge.providers.list.anilist.client.aiohttp.ClientSession",
         lambda *, headers: DummySession(headers=headers),
     )
 

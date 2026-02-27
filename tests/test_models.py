@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from anibridge_anilist_provider.models import (
+from anibridge.providers.list.anilist.models import (
     FuzzyDate,
     MediaListStatus,
     MediaListWithMedia,

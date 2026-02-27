@@ -13,7 +13,7 @@ from anibridge.utils.cache import ttl_cache
 from anibridge.utils.limiter import Limiter
 from anibridge.utils.types import ProviderLogger
 
-from anibridge_anilist_provider.models import (
+from anibridge.providers.list.anilist.models import (
     Media,
     MediaFormat,
     MediaList,
