@@ -16,6 +16,7 @@ from anibridge.list import (
 from anibridge.utils.types import ProviderLogger
 
 from anibridge.providers.list.anilist.client import AnilistClient
+from anibridge.providers.list.anilist.config import AnilistListProviderConfig
 from anibridge.providers.list.anilist.models import (
     FuzzyDate,
     Media,
@@ -42,14 +43,13 @@ class AnilistListProvider(ListProvider):
             config (dict | None): Optional configuration options for the provider.
         """
         super().__init__(logger=logger, config=config)
-        token = self.config.get("token")
+        self.parsed_config = AnilistListProviderConfig.model_validate(config or {})
 
-        if not token:
-            self.log.warning("AniList token is missing from provider configuration")
-            raise ValueError("AniList token must be provided in the configuration")
-
-        self._client = AnilistClient(anilist_token=token, logger=self.log)
-
+        self._client = AnilistClient(
+            anilist_token=self.parsed_config.token,
+            logger=self.log,
+            prefetch_list=self.parsed_config.prefetch_list,
+        )
         self._user: ListUser | None = None
         self._score_format: ScoreFormat | None = None
 

@@ -41,14 +41,18 @@ class AnilistClient:
 
     API_URL = "https://graphql.anilist.co"
 
-    def __init__(self, anilist_token: str, *, logger: ProviderLogger) -> None:
+    def __init__(
+        self, anilist_token: str, *, prefetch_list: bool, logger: ProviderLogger
+    ) -> None:
         """Initialize the AniList client.
 
         Args:
             anilist_token (str): Authentication token for AniList API.
+            prefetch_list (bool): Whether to prefetch all AniList entries into cache.
             logger (ProviderLogger): Injected provider logger.
         """
         self.anilist_token = anilist_token
+        self.prefetch_list = prefetch_list
         self.log = logger
         self._session: aiohttp.ClientSession | None = None
 
@@ -97,11 +101,8 @@ class AnilistClient:
                 sign * timedelta(hours=hours, minutes=minutes)
             )
 
-        await self.prefetch_anilist_entries()
-
-    async def prefetch_anilist_entries(self) -> None:
-        """Prefetch all non-custom AniList entries into the local cache."""
-        await self._fetch_media_list_collection_with_media()
+        if self.prefetch_list:
+            await self._fetch_media_list_collection_with_media()
 
     async def get_user(self) -> User:
         """Retrieves the authenticated user's information from AniList.
