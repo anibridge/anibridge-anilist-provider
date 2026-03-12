@@ -4,6 +4,7 @@ version = "0.2.0b8"
 description = "AniList provider for the AniBridge project."
 readme = "README.md"
 requires-python = ">=3.14"
+license = { text = "MIT" }
 
 authors = [
     { name = "Elias Benbourenane", email = "eliasbenbourenane@gmail.com" },
@@ -12,6 +13,7 @@ maintainers = [
     { name = "Elias Benbourenane", email = "eliasbenbourenane@gmail.com" },
 ]
 
+keywords = ["anibridge", "anilist"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
@@ -37,6 +39,9 @@ quote-style = "double"
 [tool.ruff.lint]
 select = ["B", "D", "DOC", "E", "F", "I", "RUF", "SIM", "UP", "W"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
@@ -51,7 +56,7 @@ module-name = "anibridge"
 namespace = true
 
 [build-system]
-requires = ["uv_build>=0.9.21,<0.10.0"]
+requires = ["uv_build>=0.10.9,<0.11.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
@@ -59,6 +64,6 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
-    "ruff>=0.15.4",
-    "ty>=0.0.19",
+    "ruff>=0.15.5",
+    "ty>=0.0.22",
 ]

@@ -28,7 +28,7 @@ from anibridge.providers.list.anilist.models import (
 )
 
 if TYPE_CHECKING:
-    from tests.conftest import FakeAnilistClient
+    from tests.fakes import FakeAnilistClient
 
 
 @pytest.mark.asyncio
