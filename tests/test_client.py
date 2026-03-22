@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import aiohttp
 import pytest
+from anibridge.utils.types import ProviderLogger
 
 from anibridge.providers.list.anilist.client import AnilistClient
 from anibridge.providers.list.anilist.models import (
@@ -34,7 +35,7 @@ def client() -> AnilistClient:
     """Return a fresh AnilistClient instance backed by the stubbed token."""
     return AnilistClient(
         anilist_token="token",
-        logger=logging.getLogger("tests.client"),
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
         prefetch_list=False,
     )
 
@@ -62,7 +63,7 @@ async def test_get_session_creates_and_reuses_client_session(
 
     stub_client = AnilistClient(
         anilist_token="abc",
-        logger=logging.getLogger("tests.client"),
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
         prefetch_list=False,
     )
 
@@ -92,7 +93,7 @@ async def test_close_ignores_already_closed_session():
 
     stub_client = AnilistClient(
         anilist_token="abc",
-        logger=logging.getLogger("tests.client"),
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
         prefetch_list=False,
     )
     stub_client._session = cast(aiohttp.ClientSession, DummySession())
@@ -500,7 +501,7 @@ async def test_make_request_retries_rate_limit(monkeypatch: pytest.MonkeyPatch):
     )
     client = AnilistClient(
         anilist_token="token",
-        logger=logging.getLogger("tests.client"),
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
         prefetch_list=False,
     )
 
@@ -533,7 +534,7 @@ async def test_make_request_retries_bad_gateway(monkeypatch: pytest.MonkeyPatch)
     )
     client = AnilistClient(
         anilist_token="token",
-        logger=logging.getLogger("tests.client"),
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
         prefetch_list=False,
     )
 
@@ -562,7 +563,7 @@ async def test_make_request_recovers_from_client_error(monkeypatch: pytest.Monke
     )
     client = AnilistClient(
         anilist_token="token",
-        logger=logging.getLogger("tests.client"),
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
         prefetch_list=False,
     )
 
@@ -588,7 +589,7 @@ async def test_make_request_raises_after_three_failures(
     session = _FakeSession([cast(object, aiohttp.ClientError("boom"))] * 4)
     client = AnilistClient(
         anilist_token="token",
-        logger=logging.getLogger("tests.client"),
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
         prefetch_list=False,
     )
 
