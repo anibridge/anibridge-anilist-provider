@@ -48,7 +48,6 @@ class AnilistListProvider(ListProvider):
         self._client = AnilistClient(
             anilist_token=self.parsed_config.token,
             logger=self.log,
-            prefetch_list=self.parsed_config.prefetch_list,
         )
         self._user: ListUser | None = None
         self._score_format: ScoreFormat | None = None

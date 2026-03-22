@@ -36,7 +36,6 @@ def client() -> AnilistClient:
     return AnilistClient(
         anilist_token="token",
         logger=cast(ProviderLogger, logging.getLogger("tests.client")),
-        prefetch_list=False,
     )
 
 
@@ -64,7 +63,6 @@ async def test_get_session_creates_and_reuses_client_session(
     stub_client = AnilistClient(
         anilist_token="abc",
         logger=cast(ProviderLogger, logging.getLogger("tests.client")),
-        prefetch_list=False,
     )
 
     session_one = await stub_client._get_session()
@@ -94,7 +92,6 @@ async def test_close_ignores_already_closed_session():
     stub_client = AnilistClient(
         anilist_token="abc",
         logger=cast(ProviderLogger, logging.getLogger("tests.client")),
-        prefetch_list=False,
     )
     stub_client._session = cast(aiohttp.ClientSession, DummySession())
 
@@ -117,7 +114,11 @@ async def test_initialize_parses_user_timezone_offset(client: AnilistClient):
             id=1, name="tz", options=UserOptions(timezone="02:30")
         )
 
+    async def noop() -> None:
+        pass
+
     client.get_user = first_user  # type: ignore[method-assign]
+    client._fetch_media_list_collection_with_media = noop  # type: ignore[method-assign]
     await client.initialize()
 
     assert client.user_timezone.utcoffset(None) == timedelta(hours=2, minutes=30)
@@ -502,7 +503,6 @@ async def test_make_request_retries_rate_limit(monkeypatch: pytest.MonkeyPatch):
     client = AnilistClient(
         anilist_token="token",
         logger=cast(ProviderLogger, logging.getLogger("tests.client")),
-        prefetch_list=False,
     )
 
     async def fake_get_session() -> _FakeSession:
@@ -535,7 +535,6 @@ async def test_make_request_retries_bad_gateway(monkeypatch: pytest.MonkeyPatch)
     client = AnilistClient(
         anilist_token="token",
         logger=cast(ProviderLogger, logging.getLogger("tests.client")),
-        prefetch_list=False,
     )
 
     async def fake_get_session() -> _FakeSession:
@@ -564,7 +563,6 @@ async def test_make_request_recovers_from_client_error(monkeypatch: pytest.Monke
     client = AnilistClient(
         anilist_token="token",
         logger=cast(ProviderLogger, logging.getLogger("tests.client")),
-        prefetch_list=False,
     )
 
     async def fake_get_session() -> _FakeSession:
@@ -590,7 +588,6 @@ async def test_make_request_raises_after_three_failures(
     client = AnilistClient(
         anilist_token="token",
         logger=cast(ProviderLogger, logging.getLogger("tests.client")),
-        prefetch_list=False,
     )
 
     async def fake_get_session() -> _FakeSession:

@@ -41,18 +41,14 @@ class AnilistClient:
 
     API_URL = "https://graphql.anilist.co"
 
-    def __init__(
-        self, anilist_token: str, *, prefetch_list: bool, logger: ProviderLogger
-    ) -> None:
+    def __init__(self, anilist_token: str, *, logger: ProviderLogger) -> None:
         """Initialize the AniList client.
 
         Args:
             anilist_token (str): Authentication token for AniList API.
-            prefetch_list (bool): Whether to prefetch all AniList entries into cache.
             logger (ProviderLogger): Injected provider logger.
         """
         self.anilist_token = anilist_token
-        self.prefetch_list = prefetch_list
         self.log = logger
         self._session: aiohttp.ClientSession | None = None
 
@@ -101,8 +97,7 @@ class AnilistClient:
                 sign * timedelta(hours=hours, minutes=minutes)
             )
 
-        if self.prefetch_list:
-            await self._fetch_media_list_collection_with_media()
+        await self._fetch_media_list_collection_with_media()  # Load list into cache
 
     async def get_user(self) -> User:
         """Retrieves the authenticated user's information from AniList.
@@ -580,6 +575,7 @@ class AnilistClient:
 
         return data_without_media.model_dump_json()
 
+    @ttl_cache(ttl=60)  # Because `initialize()` and `backup_list()` will duplicate work
     async def _fetch_media_list_collection_with_media(
         self,
     ) -> MediaListCollectionWithMedia:
