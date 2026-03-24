@@ -200,12 +200,12 @@ class AnilistBaseModel(BaseModel):
             ):
                 nested_fields = field_type.model_dump_graphql()
                 if nested_fields:
-                    graphql_fields.append(f"{camel_field_name} {{\n{nested_fields}\n}}")
+                    graphql_fields.append(f"{camel_field_name} {{ {nested_fields} }}")
             else:
                 graphql_fields.append(f"{camel_field_name}")
 
         cls._processed_models.remove(cls.__name__)
-        return "\n".join(graphql_fields)
+        return " ".join(graphql_fields)
 
     def __hash__(self) -> int:
         """Return hash of the model representation."""
