@@ -722,7 +722,7 @@ class AnilistClient:
                 try:
                     response.raise_for_status()
                 except aiohttp.ClientResponseError as e:
-                    self.log.error("Failed to make request to AniList API")
+                    self.log.error(f"Failed to make request to AniList API: {e}")
                     response_text = await response.text()
                     self.log.error(f"\t{response_text}")
                     clean_query = " ".join(query.split())
