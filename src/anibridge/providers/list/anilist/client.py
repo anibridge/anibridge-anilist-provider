@@ -123,8 +123,13 @@ class AnilistClient:
 
     def _remember(self, media: Media) -> None:
         """Store media in shared caches."""
-        self._media_cache[media.id] = media
-        if media.media_list_entry is not None:
+        # Keep the long-lived TTL cache free of user-specific list state.
+        self._media_cache[media.id] = media.model_copy(
+            update={"media_list_entry": None}
+        )
+        if media.media_list_entry is None:
+            self._list_cache.pop(media.id, None)
+        else:
             self._list_cache[media.id] = media
 
     def _schedule_list_refresh(self) -> None:
