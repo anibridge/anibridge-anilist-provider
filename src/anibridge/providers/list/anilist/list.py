@@ -146,7 +146,7 @@ class AnilistListProvider(ListProvider):
 
     async def clear_cache(self) -> None:
         """Clear any cached data within the provider."""
-        self._client.offline_anilist_entries.clear()
+        self._client.clear_cache()
         self.log.debug("Cleared AniList provider cache")
 
     async def close(self) -> None:
