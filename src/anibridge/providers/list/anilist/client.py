@@ -56,6 +56,7 @@ class AnilistClient:
         self.user_timezone: tzinfo = UTC
 
         self._bg_task: asyncio.Task[MediaListCollectionWithMedia] | None = None
+        self._cache_epoch = 0
         self._list_cache: dict[int, Media] = {}
         self._media_cache: TTLDict[int, Media] = TTLDict(ttl=43200)
 
@@ -88,6 +89,11 @@ class AnilistClient:
         """Clear in-memory caches for user list and general media lookups."""
         self._list_cache.clear()
         self._media_cache.clear()
+        self._invalidate_cached_views()
+
+    def _invalidate_cached_views(self) -> None:
+        """Invalidate derived cached views after list-state changes."""
+        self._cache_epoch += 1
         if (task := self._bg_task) and not task.done():
             task.cancel()
         self._bg_task = None
@@ -183,6 +189,7 @@ class AnilistClient:
         saved = MediaListWithMedia(**response["data"]["SaveMediaListEntry"])
         self._list_cache[entry.media_id] = self._to_media(saved)
         self._media_cache.clear()
+        self._invalidate_cached_views()
 
     async def delete_anime_entry(self, entry_id: int, media_id: int) -> bool:
         """Deletes an anime entry from the authenticated user's list."""
@@ -203,6 +210,7 @@ class AnilistClient:
         response = await self._make_request(query, variables)
         self._list_cache.pop(media_id, None)
         self._media_cache.pop(media_id, None)
+        self._invalidate_cached_views()
         return response["data"]["DeleteMediaListEntry"]["deleted"]
 
     async def batch_update_anime_entries(self, entries: list[MediaList]) -> set[int]:
@@ -281,6 +289,7 @@ class AnilistClient:
                 updated.update(await self._fallback_update(missing))
 
         self._media_cache.clear()
+        self._invalidate_cached_views()
         return updated
 
     async def _fallback_update(self, entries: list[MediaList]) -> set[int]:
@@ -452,9 +461,10 @@ class AnilistClient:
         """
 
         self.log.debug("Refreshing user list cache from AniList API")
-        self._list_cache.clear()
+        refresh_epoch = self._cache_epoch
 
         data = MediaListCollectionWithMedia(user=self.user, has_next_chunk=True)
+        refreshed_list_cache: dict[int, Media] = {}
         variables: dict[str, Any] = {
             "userId": self.user.id,
             "type": "ANIME",
@@ -463,6 +473,8 @@ class AnilistClient:
 
         while data.has_next_chunk:
             response = await self._make_request(query, variables)
+            if refresh_epoch != self._cache_epoch:
+                raise asyncio.CancelledError
             chunk = MediaListCollectionWithMedia(
                 **response["data"]["MediaListCollection"]
             )
@@ -474,7 +486,15 @@ class AnilistClient:
                     continue
                 data.lists.append(li)
                 for entry in li.entries:
-                    self._list_cache[entry.media_id] = self._to_media(entry)
+                    refreshed_list_cache[entry.media_id] = self._to_media(entry)
+
+        if refresh_epoch != self._cache_epoch:
+            raise asyncio.CancelledError
+
+        self._list_cache.clear()
+        self._list_cache.update(refreshed_list_cache)
+        with contextlib.suppress(AttributeError):
+            self._search_anime.cache_clear()
 
         return data
 
