@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 from anibridge.list import ListMediaType, ListStatus
+from anibridge.utils.types import ProviderLogger
 
 from anibridge.providers.list.anilist.client import AnilistClient
 from anibridge.providers.list.anilist.list import (
@@ -23,9 +24,7 @@ from anibridge.providers.list.anilist.models import (
     MediaListStatus,
     ScoreFormat,
 )
-from anibridge.providers.list.anilist.models import (
-    User as AnilistAPIUser,
-)
+from anibridge.providers.list.anilist.models import User as AnilistAPIUser
 
 if TYPE_CHECKING:
     from tests.fakes import FakeAnilistClient
@@ -398,7 +397,9 @@ def test_entry_status_roundtrip(
 def test_provider_requires_token() -> None:
     """Provider construction without a token should raise a ValueError."""
     with pytest.raises(ValueError):
-        AnilistListProvider(logger=logging.getLogger("tests.list"), config={})
+        AnilistListProvider(
+            logger=cast(ProviderLogger, logging.getLogger("tests.list")), config={}
+        )
 
 
 def test_entry_started_and_finished_setter_respects_user_timezone(
@@ -448,7 +449,8 @@ def test_entry_started_and_finished_getter_returns_aware_datetime(
 async def test_provider_initialize_sets_user_and_score_format() -> None:
     """Initialize should cache the provider user metadata and score format."""
     provider = AnilistListProvider(
-        logger=logging.getLogger("tests.list"), config={"token": "abc"}
+        logger=cast(ProviderLogger, logging.getLogger("tests.list")),
+        config={"token": "abc"},
     )
     stub = StubAnilistClient()
     provider._client = cast(AnilistClient, stub)
@@ -466,7 +468,8 @@ async def test_provider_initialize_sets_user_and_score_format() -> None:
 async def test_backup_and_restore_list_delegate_to_client() -> None:
     """backup_list and restore_list should proxy to the underlying client."""
     provider = AnilistListProvider(
-        logger=logging.getLogger("tests.list"), config={"token": "abc"}
+        logger=cast(ProviderLogger, logging.getLogger("tests.list")),
+        config={"token": "abc"},
     )
     stub = StubAnilistClient()
     provider._client = cast(AnilistClient, stub)
@@ -482,7 +485,8 @@ async def test_backup_and_restore_list_delegate_to_client() -> None:
 async def test_provider_close_forwards_to_client() -> None:
     """Close should call through to the AniList client."""
     provider = AnilistListProvider(
-        logger=logging.getLogger("tests.list"), config={"token": "abc"}
+        logger=cast(ProviderLogger, logging.getLogger("tests.list")),
+        config={"token": "abc"},
     )
     stub = StubAnilistClient()
     provider._client = cast(AnilistClient, stub)
@@ -647,11 +651,11 @@ async def test_clear_cache_empties_fake_storage(
     sample_media: Media,
 ):
     """clear_cache should drop any cached media entries on the client."""
-    fake_client.offline_anilist_entries = {sample_media.id: sample_media}
+    fake_client._list_cache[sample_media.id] = sample_media
 
     await provider.clear_cache()
 
-    assert fake_client.offline_anilist_entries == {}
+    assert fake_client._list_cache == {}
 
 
 @pytest.mark.asyncio

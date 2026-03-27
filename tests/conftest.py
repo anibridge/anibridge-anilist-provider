@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import cast
 
 import pytest
+from anibridge.utils.types import ProviderLogger
 
 from anibridge.providers.list.anilist.client import AnilistClient
 from anibridge.providers.list.anilist.list import AnilistListEntry, AnilistListProvider
@@ -82,7 +83,7 @@ def fake_client(sample_media: Media, second_media: Media) -> FakeAnilistClient:
 def provider(fake_client: FakeAnilistClient) -> AnilistListProvider:
     """Return an AnilistListProvider wired to the fake client."""
     provider = AnilistListProvider(
-        logger=logging.getLogger("tests.provider"),
+        logger=cast(ProviderLogger, logging.getLogger("tests.provider")),
         config={"token": "fake-token", "profile_name": "pytest"},
     )
     provider._client = cast(AnilistClient, fake_client)

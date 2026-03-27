@@ -118,7 +118,7 @@ async def test_initialize_parses_user_timezone_offset(client: AnilistClient):
         pass
 
     client.get_user = first_user  # type: ignore[method-assign]
-    client._fetch_media_list_collection_with_media = noop  # type: ignore[method-assign]
+    client._fetch_list_collection = noop  # type: ignore[method-assign]
     await client.initialize()
 
     assert client.user_timezone.utcoffset(None) == timedelta(hours=2, minutes=30)
@@ -162,12 +162,13 @@ async def test_get_user_returns_viewer_payload(client: AnilistClient):
 async def test_get_anime_prefers_cached_entry(client: AnilistClient, media_factory):
     """get_anime should avoid the network when a cached entry exists."""
     cached_media: Media = media_factory(999, "cached show")
-    client.offline_anilist_entries[cached_media.id] = cached_media
+    client._list_cache[cached_media.id] = cached_media
 
     async def should_not_call(*_args: Any, **_kwargs: Any) -> dict:
         raise AssertionError("Network should not be called for cached anime")
 
     client._make_request = should_not_call
+    client._schedule_list_refresh = lambda: None  # type: ignore[method-assign]
 
     result = await client.get_anime(cached_media.id)
 
@@ -181,7 +182,8 @@ async def test_batch_get_anime_fetches_missing_ids(
     """batch_get_anime should mix cached entries with fetched ones."""
     cached_media: Media = media_factory(101, "cached")
     fetched_media: Media = media_factory(202, "fetched")
-    client.offline_anilist_entries[cached_media.id] = cached_media
+    client._list_cache[cached_media.id] = cached_media
+    client._schedule_list_refresh = lambda: None  # type: ignore[method-assign]
 
     async def fake_request(query: str, variables: dict | None = None, **_: Any) -> dict:
         assert variables == {"ids": [fetched_media.id]}
@@ -198,7 +200,7 @@ async def test_batch_get_anime_fetches_missing_ids(
     results = await client.batch_get_anime([cached_media.id, fetched_media.id])
 
     assert cached_media in results
-    assert fetched_media.id in client.offline_anilist_entries
+    assert fetched_media.id in client._list_cache
     assert any(media.id == fetched_media.id for media in results)
 
 
@@ -209,7 +211,9 @@ async def test_batch_get_anime_returns_cached_when_all_present(
     """batch_get_anime should skip network work when everything is cached."""
     first = media_factory(10, "alpha")
     second = media_factory(20, "beta")
-    client.offline_anilist_entries = {first.id: first, second.id: second}
+    client._list_cache[first.id] = first
+    client._list_cache[second.id] = second
+    client._schedule_list_refresh = lambda: None  # type: ignore[method-assign]
 
     async def should_not_call(*_args: Any, **_kwargs: Any) -> dict:
         raise AssertionError("Network should not be called when all entries are cached")
@@ -297,7 +301,7 @@ def _build_saved_entry(media_id: int, title: str) -> MediaListWithMedia:
 
 @pytest.mark.asyncio
 async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
-    """Updating an entry should refresh the offline cache with the response payload."""
+    """Updating an entry should refresh the list cache with the response payload."""
     entry = MediaList(id=10, user_id=1, media_id=777, status=MediaListStatus.CURRENT)
     saved_entry = _build_saved_entry(entry.media_id, "cache me")
 
@@ -308,7 +312,7 @@ async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
 
     await client.update_anime_entry(entry)
 
-    cached = client.offline_anilist_entries[entry.media_id]
+    cached = client._list_cache[entry.media_id]
     assert cached.media_list_entry is not None
     assert cached.media_list_entry.progress == 5
 
@@ -327,7 +331,7 @@ async def test_delete_anime_entry_removes_cache(
     """Successful deletes should purge cached entries by media id."""
     media = media_factory(303, "delete me")
     client.user = User.model_construct(id=1, name="Tester")
-    client.offline_anilist_entries[media.id] = media
+    client._list_cache[media.id] = media
     assert media.media_list_entry is not None, (
         "Precondition: media must have list entry"
     )
@@ -340,7 +344,7 @@ async def test_delete_anime_entry_removes_cache(
     deleted = await client.delete_anime_entry(media.media_list_entry.id, media.id)
 
     assert deleted is True
-    assert media.id not in client.offline_anilist_entries
+    assert media.id not in client._list_cache
 
 
 @pytest.mark.asyncio
@@ -383,7 +387,7 @@ async def test_backup_anilist_returns_sanitized_json(client: AnilistClient):
     assert parsed["lists"][0]["entries"][0]["mediaId"] == 404
     assert "media" not in parsed["lists"][0]["entries"][0]
     assert len(parsed["lists"]) == 1
-    assert 404 in client.offline_anilist_entries
+    assert 404 in client._list_cache
 
 
 @pytest.mark.asyncio
@@ -426,9 +430,9 @@ async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
 
 @pytest.mark.asyncio
 async def test_media_list_entry_to_media_merges_metadata(client: AnilistClient):
-    """_media_list_entry_to_media should combine list and media fields."""
+    """_to_media should combine list and media fields."""
     saved_entry = _build_saved_entry(515, "merge target")
-    media = client._media_list_entry_to_media(saved_entry)
+    media = client._to_media(saved_entry)
 
     assert media.media_list_entry is not None
     assert media.media_list_entry.media_id == 515
@@ -656,7 +660,7 @@ async def test_batch_update_anime_entries_updates_cache(client: AnilistClient):
     await client.batch_update_anime_entries(entries)
 
     assert calls == 2
-    assert len(client.offline_anilist_entries) == len(entries)
+    assert len(client._list_cache) == len(entries)
 
 
 @pytest.mark.asyncio
@@ -665,6 +669,7 @@ async def test_get_anime_fetches_from_api_when_not_cached(
 ):
     """get_anime should call out to AniList when the cache is missing the id."""
     media = media_factory(505, "api show")
+    client._schedule_list_refresh = lambda: None  # type: ignore[method-assign]
 
     async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
         return {"data": {"Media": media.model_dump()}}
@@ -674,7 +679,7 @@ async def test_get_anime_fetches_from_api_when_not_cached(
     result = await client.get_anime(media.id)
 
     assert result.id == media.id
-    assert client.offline_anilist_entries[media.id].id == media.id
+    assert client._list_cache[media.id].id == media.id
 
 
 @pytest.mark.asyncio
@@ -684,7 +689,8 @@ async def test_batch_get_anime_mixed_cache_uses_network(
     """batch_get_anime should fallback to the API for missing ids."""
     cached = media_factory(1, "cached")
     missing = media_factory(2, "missing")
-    client.offline_anilist_entries[cached.id] = cached
+    client._list_cache[cached.id] = cached
+    client._schedule_list_refresh = lambda: None  # type: ignore[method-assign]
 
     async def fake_request(
         query: str, variables: dict | None = None, retry_count: int = 0, **_: Any
@@ -703,7 +709,7 @@ async def test_batch_get_anime_mixed_cache_uses_network(
     results = await client.batch_get_anime([cached.id, missing.id])
 
     assert set(media.id for media in results) == {cached.id, missing.id}
-    assert missing.id in client.offline_anilist_entries
+    assert missing.id in client._list_cache
 
 
 @pytest.mark.asyncio
