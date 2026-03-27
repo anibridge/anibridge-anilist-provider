@@ -57,11 +57,7 @@ class AnilistClient:
         self.offline_anilist_entries: dict[int, Media] = {}
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create the aiohttp session.
-
-        Returns:
-            aiohttp.ClientSession: The active session for making HTTP requests.
-        """
+        """Get or create the aiohttp session."""
         if self._session is None or self._session.closed:
             headers = {
                 "Accept": "application/json",
@@ -100,17 +96,7 @@ class AnilistClient:
         await self._fetch_media_list_collection_with_media()  # Load list into cache
 
     async def get_user(self) -> User:
-        """Retrieves the authenticated user's information from AniList.
-
-        Makes a GraphQL query to fetch detailed user information including ID, name,
-        and other profile data for the authenticated user.
-
-        Returns:
-            User: Object containing the authenticated user's information
-
-        Raises:
-            aiohttp.ClientError: If the API request fails
-        """
+        """Retrieves the authenticated user's information from AniList."""
         query = f"""
         query {{
             Viewer {{
@@ -123,17 +109,7 @@ class AnilistClient:
         return User(**response["data"]["Viewer"])
 
     async def update_anime_entry(self, media_list_entry: MediaList) -> None:
-        """Updates an anime entry on the authenticated user's list.
-
-        Sends a mutation to modify an existing anime entry in the user's list with new
-        values for status, score, progress, etc.
-
-        Args:
-            media_list_entry (MediaList): Updated AniList entry to save
-
-        Raises:
-            aiohttp.ClientError: If the API request fails
-        """
+        """Updates an anime entry on the authenticated user's list."""
         query = f"""
         mutation (
             $mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int,
@@ -166,16 +142,6 @@ class AnilistClient:
 
         Sends a batch mutation to modify multiple existing anime entries in the user's
         list. Processes entries in batches of 10 to avoid overwhelming the API.
-
-        Args:
-            media_list_entries (list[MediaList]): List of updated AniList entries to
-                save.
-
-        Returns:
-            set[int]: The set of media IDs that were successfully updated.
-
-        Raises:
-            aiohttp.ClientError: If the API request fails.
         """
         BATCH_SIZE = 10
 
@@ -287,21 +253,7 @@ class AnilistClient:
         return updated_media_ids
 
     async def delete_anime_entry(self, entry_id: int, media_id: int) -> bool:
-        """Deletes an anime entry from the authenticated user's list.
-
-        Sends a mutation to remove a specific anime entry from the user's list.
-
-        Args:
-            entry_id (int): The AniList ID of the list entry to delete.
-            media_id (int): The AniList ID of the anime being deleted.
-
-        Returns:
-            bool: True if the entry was successfully deleted and not in dry run mode,
-                  False otherwise.
-
-        Raises:
-            aiohttp.ClientError: If the API request fails.
-        """
+        """Deletes an anime entry from the authenticated user's list."""
         if not self.user:
             raise aiohttp.ClientError("User information is required for deletions")
 
@@ -332,27 +284,7 @@ class AnilistClient:
         episodes: int | None = None,
         limit: int = 10,
     ) -> AsyncIterator[Media]:
-        """Search for anime on AniList with filtering capabilities.
-
-        Performs a search query and filters results based on media format and episode
-        count. Uses local caching through _search_anime() to optimize repeated searches.
-
-        Args:
-            search_str (str): Title or keywords to search for.
-            is_movie (bool | None):
-                - True: search only movies and specials
-                - False: search TV series, OVAs, ONAs (and TV_SHORT)
-                - None: search across both movies/specials and TV/OVAs/ONAs
-            episodes (int | None): Filter results to match this episode count. If None,
-                returns all results.
-            limit (int): Maximum number of results to return.
-
-        Yields:
-            Media: Filtered matching anime entries, sorted by relevance.
-
-        Raises:
-            aiohttp.ClientError: If the API request fails.
-        """
+        """Search for anime on AniList with filtering capabilities."""
         kind = "all" if is_movie is None else ("movie" if is_movie else "show")
         self.log.debug(
             f"Searching for {kind} "
@@ -418,15 +350,6 @@ class AnilistClient:
 
         Attempts to fetch anime data from local cache first, falling back to
         an API request if not found in cache.
-
-        Args:
-            anilist_id (int): The AniList ID of the anime to retrieve.
-
-        Returns:
-            Media: Detailed information about the requested anime.
-
-        Raises:
-            aiohttp.ClientError: If the API request fails.
         """
         if anilist_id in self.offline_anilist_entries:
             self.log.debug(
@@ -460,15 +383,6 @@ class AnilistClient:
         Attempts to fetch anime data from local cache first, falling back to
         batch API requests for entries not found in cache. Processes requests
         in batches of 10 to avoid overwhelming the API.
-
-        Args:
-            anilist_ids (list[int]): The AniList IDs of the anime to retrieve.
-
-        Returns:
-            list[Media]: Detailed information about the requested anime.
-
-        Raises:
-            aiohttp.ClientError: If the API request fails.
         """
         BATCH_SIZE = 50
 
@@ -525,21 +439,7 @@ class AnilistClient:
         return result
 
     async def backup_anilist(self) -> str:
-        """Creates a JSON backup of the user's AniList data.
-
-        Fetches all anime entries from the user's lists and saves them to a JSON
-        file. Implements a rotating backup system that maintains backups for the
-        configured retention period.
-
-        The backup includes:
-            - User information
-            - All non-custom anime lists
-            - Detailed information about each anime entry
-
-        Raises:
-            aiohttp.ClientError: If the API request fails.
-            OSError: If unable to create backup directory or write backup file.
-        """
+        """Creates a JSON backup of the user's AniList data."""
         if not self.user:
             raise aiohttp.ClientError("User information is required for deletions")
 
@@ -619,14 +519,7 @@ class AnilistClient:
         return data
 
     async def restore_anilist(self, backup: str) -> None:
-        """Restores the user's AniList data from a JSON backup.
-
-        Parses the provided backup string and restores the user's anime lists
-        and entries on AniList.
-
-        Args:
-            backup (str): The backup data as a string to be restored.
-        """
+        """Restores the user's AniList data from a JSON backup."""
         json_data = json.loads(backup)
         data = MediaListCollection(**json_data)
         await self.batch_update_anime_entries(
@@ -634,22 +527,7 @@ class AnilistClient:
         )
 
     def _media_list_entry_to_media(self, media_list_entry: MediaListWithMedia) -> Media:
-        """Converts a MediaListWithMedia object to a Media object.
-
-        Creates a new Media object that combines the user's list entry data
-        with the anime's metadata.
-
-        Args:
-            media_list_entry (MediaListWithMedia): Combined object containing both list
-                entry and media information.
-
-        Returns:
-            Media: New Media object containing all relevant fields from both the list
-                entry and media information.
-
-        Note:
-            This is an internal helper method used primarily by backup_anilist().
-        """
+        """Converts a MediaListWithMedia object to a Media object."""
         return Media(
             media_list_entry=MediaList(
                 **{
@@ -673,23 +551,6 @@ class AnilistClient:
 
         Handles rate limiting, authentication, and automatic retries for
         rate limit exceeded responses.
-
-        Args:
-            query (str): GraphQL query string
-            variables (dict | str): Variables for the GraphQL query
-            retry_count (int): Number of retries attempted (used for temporary errors)
-
-        Returns:
-            dict: JSON response from the API
-
-        Raises:
-            aiohttp.ClientError: If the request fails for any reason other than rate
-                limiting
-
-        Note:
-            - Implements rate limiting of 30 requests per minute
-            - Automatically retries after waiting if rate limit is exceeded
-            - Includes Authorization header using the stored token
         """
         if retry_count >= 3:
             raise aiohttp.ClientError("Failed to make request after 3 tries")
