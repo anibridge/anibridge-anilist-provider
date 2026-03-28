@@ -29,7 +29,7 @@ class FakeAnilistClient:
                 score_format=ScoreFormat.POINT_10_DECIMAL
             ),
         )
-        self.offline_anilist_entries: dict[int, Media] = {}
+        self._list_cache: dict[int, Media] = {}
         self.update_payloads: list[MediaList] = []
         self.batch_update_payloads: list[list[MediaList]] = []
         self.deleted_entries: list[tuple[int, int]] = []
@@ -80,3 +80,7 @@ class FakeAnilistClient:
     async def close(self) -> None:
         """No-op close method."""
         return None
+
+    def clear_cache(self) -> None:
+        """Clear the cache."""
+        self._list_cache.clear()

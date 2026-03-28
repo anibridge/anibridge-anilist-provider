@@ -117,8 +117,8 @@ async def test_initialize_parses_user_timezone_offset(client: AnilistClient):
     async def noop() -> None:
         pass
 
-    client.get_user = first_user  # type: ignore[method-assign]
-    client._fetch_media_list_collection_with_media = noop  # type: ignore[method-assign]
+    client.get_user = first_user  # ty:ignore[invalid-assignment]
+    client._fetch_list_collection = noop  # ty:ignore[invalid-assignment]
     await client.initialize()
 
     assert client.user_timezone.utcoffset(None) == timedelta(hours=2, minutes=30)
@@ -129,7 +129,7 @@ async def test_initialize_parses_user_timezone_offset(client: AnilistClient):
             id=1, name="tz", options=UserOptions(timezone="-05:00")
         )
 
-    client.get_user = second_user  # type: ignore[method-assign]
+    client.get_user = second_user  # ty:ignore[invalid-assignment]
     await client.initialize()
 
     assert client.user_timezone.utcoffset(None) == timedelta(hours=-5)
@@ -162,12 +162,13 @@ async def test_get_user_returns_viewer_payload(client: AnilistClient):
 async def test_get_anime_prefers_cached_entry(client: AnilistClient, media_factory):
     """get_anime should avoid the network when a cached entry exists."""
     cached_media: Media = media_factory(999, "cached show")
-    client.offline_anilist_entries[cached_media.id] = cached_media
+    client._list_cache[cached_media.id] = cached_media
 
     async def should_not_call(*_args: Any, **_kwargs: Any) -> dict:
         raise AssertionError("Network should not be called for cached anime")
 
     client._make_request = should_not_call
+    client._schedule_list_refresh = lambda: None  # ty:ignore[invalid-assignment]
 
     result = await client.get_anime(cached_media.id)
 
@@ -181,7 +182,8 @@ async def test_batch_get_anime_fetches_missing_ids(
     """batch_get_anime should mix cached entries with fetched ones."""
     cached_media: Media = media_factory(101, "cached")
     fetched_media: Media = media_factory(202, "fetched")
-    client.offline_anilist_entries[cached_media.id] = cached_media
+    client._list_cache[cached_media.id] = cached_media
+    client._schedule_list_refresh = lambda: None  # ty:ignore[invalid-assignment]
 
     async def fake_request(query: str, variables: dict | None = None, **_: Any) -> dict:
         assert variables == {"ids": [fetched_media.id]}
@@ -198,7 +200,7 @@ async def test_batch_get_anime_fetches_missing_ids(
     results = await client.batch_get_anime([cached_media.id, fetched_media.id])
 
     assert cached_media in results
-    assert fetched_media.id in client.offline_anilist_entries
+    assert fetched_media.id in client._list_cache
     assert any(media.id == fetched_media.id for media in results)
 
 
@@ -209,7 +211,9 @@ async def test_batch_get_anime_returns_cached_when_all_present(
     """batch_get_anime should skip network work when everything is cached."""
     first = media_factory(10, "alpha")
     second = media_factory(20, "beta")
-    client.offline_anilist_entries = {first.id: first, second.id: second}
+    client._list_cache[first.id] = first
+    client._list_cache[second.id] = second
+    client._schedule_list_refresh = lambda: None  # ty:ignore[invalid-assignment]
 
     async def should_not_call(*_args: Any, **_kwargs: Any) -> dict:
         raise AssertionError("Network should not be called when all entries are cached")
@@ -247,7 +251,7 @@ async def test_search_anime_filters_episode_and_status(
     async def fake_search(*_args: Any, **_kwargs: Any) -> list[Media]:
         return [releasing, finished_matching, skipped]
 
-    client._search_anime = fake_search  # type: ignore[method-assign]
+    client._search_anime = fake_search  # ty:ignore[invalid-assignment]
 
     results: list[Media] = []
     async for media in client.search_anime("foo", is_movie=None, episodes=24):
@@ -268,7 +272,7 @@ async def test_search_anime_without_episode_filter_returns_all(
     async def fake_search(*_args: Any, **_kwargs: Any) -> list[Media]:
         return [finished]
 
-    client._search_anime = fake_search  # type: ignore[method-assign]
+    client._search_anime = fake_search  # ty:ignore[invalid-assignment]
 
     results = [media async for media in client.search_anime("foo", is_movie=False)]
 
@@ -297,7 +301,7 @@ def _build_saved_entry(media_id: int, title: str) -> MediaListWithMedia:
 
 @pytest.mark.asyncio
 async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
-    """Updating an entry should refresh the offline cache with the response payload."""
+    """Updating an entry should refresh the list cache with the response payload."""
     entry = MediaList(id=10, user_id=1, media_id=777, status=MediaListStatus.CURRENT)
     saved_entry = _build_saved_entry(entry.media_id, "cache me")
 
@@ -308,9 +312,101 @@ async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
 
     await client.update_anime_entry(entry)
 
-    cached = client.offline_anilist_entries[entry.media_id]
+    cached = client._list_cache[entry.media_id]
     assert cached.media_list_entry is not None
     assert cached.media_list_entry.progress == 5
+
+
+@pytest.mark.asyncio
+async def test_update_anime_entry_invalidates_cached_backup(
+    client: AnilistClient,
+):
+    """Updating an entry should force backup_anilist to fetch fresh list data."""
+    client.user = User.model_construct(id=1, name="Backup Tester")
+    entry = MediaList(
+        id=10,
+        user_id=1,
+        media_id=777,
+        status=MediaListStatus.CURRENT,
+        progress=5,
+    )
+    collection_calls = 0
+    state = {"progress": 1}
+
+    async def fake_request(query: str, *_args: Any, **_kwargs: Any) -> dict:
+        nonlocal collection_calls
+        if "MediaListCollection" in query:
+            collection_calls += 1
+            return {
+                "data": {
+                    "MediaListCollection": {
+                        "user": {"id": 1, "name": "Backup Tester"},
+                        "lists": [
+                            {
+                                "entries": [
+                                    {
+                                        "id": 10,
+                                        "userId": 1,
+                                        "mediaId": 777,
+                                        "status": "CURRENT",
+                                        "progress": state["progress"],
+                                        "media": {
+                                            "id": 777,
+                                            "format": "TV",
+                                            "status": "RELEASING",
+                                        },
+                                    }
+                                ],
+                                "name": "Watching",
+                                "isCustomList": False,
+                                "status": "CURRENT",
+                            }
+                        ],
+                        "hasNextChunk": False,
+                    }
+                }
+            }
+        if "SaveMediaListEntry" in query:
+            state["progress"] = 5
+            saved_entry = _build_saved_entry(entry.media_id, "cache me")
+            return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
+        raise AssertionError(query)
+
+    client._make_request = fake_request
+
+    first_backup = json.loads(await client.backup_anilist())
+    await client.update_anime_entry(entry)
+    second_backup = json.loads(await client.backup_anilist())
+
+    assert first_backup["lists"][0]["entries"][0]["progress"] == 1
+    assert second_backup["lists"][0]["entries"][0]["progress"] == 5
+    assert collection_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_update_anime_entry_clears_search_cache(client: AnilistClient):
+    """Updating an entry should invalidate any cached search results."""
+
+    class CachedSearch:
+        def __init__(self) -> None:
+            self.clear_calls = 0
+
+        def cache_clear(self) -> None:
+            self.clear_calls += 1
+
+    entry = MediaList(id=10, user_id=1, media_id=777, status=MediaListStatus.CURRENT)
+    saved_entry = _build_saved_entry(entry.media_id, "cache me")
+    fake_search = CachedSearch()
+
+    async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
+        return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
+
+    client._search_anime = cast(Any, fake_search)
+    client._make_request = fake_request
+
+    await client.update_anime_entry(entry)
+
+    assert fake_search.clear_calls == 1
 
 
 @pytest.mark.asyncio
@@ -327,7 +423,7 @@ async def test_delete_anime_entry_removes_cache(
     """Successful deletes should purge cached entries by media id."""
     media = media_factory(303, "delete me")
     client.user = User.model_construct(id=1, name="Tester")
-    client.offline_anilist_entries[media.id] = media
+    client._list_cache[media.id] = media
     assert media.media_list_entry is not None, (
         "Precondition: media must have list entry"
     )
@@ -340,7 +436,7 @@ async def test_delete_anime_entry_removes_cache(
     deleted = await client.delete_anime_entry(media.media_list_entry.id, media.id)
 
     assert deleted is True
-    assert media.id not in client.offline_anilist_entries
+    assert media.id not in client._list_cache
 
 
 @pytest.mark.asyncio
@@ -383,7 +479,37 @@ async def test_backup_anilist_returns_sanitized_json(client: AnilistClient):
     assert parsed["lists"][0]["entries"][0]["mediaId"] == 404
     assert "media" not in parsed["lists"][0]["entries"][0]
     assert len(parsed["lists"]) == 1
-    assert 404 in client.offline_anilist_entries
+    assert 404 in client._list_cache
+
+
+@pytest.mark.asyncio
+async def test_fetch_list_collection_keeps_media_cache_metadata_only(
+    client: AnilistClient, media_factory: Callable[[int, str], Media]
+):
+    """A list refresh should not resurrect stale list-entry state from _media_cache."""
+    user = User.model_construct(id=1, name="Refresh Tester")
+    client.user = user
+    media = media_factory(404, "stale list entry")
+    client._remember(media)
+
+    async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
+        return {
+            "data": {
+                "MediaListCollection": {
+                    "user": {"id": 1, "name": "Refresh Tester"},
+                    "lists": [],
+                    "hasNextChunk": False,
+                }
+            }
+        }
+
+    client._make_request = fake_request
+
+    await client._fetch_list_collection()
+
+    cached = client._cached(media.id)
+    assert cached is not None
+    assert cached.media_list_entry is None
 
 
 @pytest.mark.asyncio
@@ -416,7 +542,7 @@ async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
         recorded_entries = entries
         return {entry.media_id for entry in entries}
 
-    client.batch_update_anime_entries = fake_batch_update  # type: ignore[method-assign]
+    client.batch_update_anime_entries = fake_batch_update  # ty:ignore[invalid-assignment]
 
     await client.restore_anilist(backup)
 
@@ -426,9 +552,9 @@ async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
 
 @pytest.mark.asyncio
 async def test_media_list_entry_to_media_merges_metadata(client: AnilistClient):
-    """_media_list_entry_to_media should combine list and media fields."""
+    """_to_media should combine list and media fields."""
     saved_entry = _build_saved_entry(515, "merge target")
-    media = client._media_list_entry_to_media(saved_entry)
+    media = client._to_media(saved_entry)
 
     assert media.media_list_entry is not None
     assert media.media_list_entry.media_id == 515
@@ -514,7 +640,7 @@ async def test_make_request_retries_rate_limit(monkeypatch: pytest.MonkeyPatch):
         nonlocal sleep_calls
         sleep_calls += 1
 
-    client._get_session = fake_get_session  # type: ignore[method-assign]
+    client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     result = await client._make_request("query")
@@ -543,7 +669,7 @@ async def test_make_request_retries_bad_gateway(monkeypatch: pytest.MonkeyPatch)
     async def fake_sleep(_seconds: float) -> None:
         return None
 
-    client._get_session = fake_get_session  # type: ignore[method-assign]
+    client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     result = await client._make_request("query")
@@ -571,7 +697,7 @@ async def test_make_request_recovers_from_client_error(monkeypatch: pytest.Monke
     async def fake_sleep(_seconds: float) -> None:
         return None
 
-    client._get_session = fake_get_session  # type: ignore[method-assign]
+    client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     result = await client._make_request("query")
@@ -596,7 +722,7 @@ async def test_make_request_raises_after_three_failures(
     async def fake_sleep(_seconds: float) -> None:
         return None
 
-    client._get_session = fake_get_session  # type: ignore[method-assign]
+    client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     with pytest.raises(aiohttp.ClientError):
@@ -656,7 +782,7 @@ async def test_batch_update_anime_entries_updates_cache(client: AnilistClient):
     await client.batch_update_anime_entries(entries)
 
     assert calls == 2
-    assert len(client.offline_anilist_entries) == len(entries)
+    assert len(client._list_cache) == len(entries)
 
 
 @pytest.mark.asyncio
@@ -665,6 +791,7 @@ async def test_get_anime_fetches_from_api_when_not_cached(
 ):
     """get_anime should call out to AniList when the cache is missing the id."""
     media = media_factory(505, "api show")
+    client._schedule_list_refresh = lambda: None  # ty:ignore[invalid-assignment]
 
     async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
         return {"data": {"Media": media.model_dump()}}
@@ -674,7 +801,7 @@ async def test_get_anime_fetches_from_api_when_not_cached(
     result = await client.get_anime(media.id)
 
     assert result.id == media.id
-    assert client.offline_anilist_entries[media.id].id == media.id
+    assert client._list_cache[media.id].id == media.id
 
 
 @pytest.mark.asyncio
@@ -684,7 +811,8 @@ async def test_batch_get_anime_mixed_cache_uses_network(
     """batch_get_anime should fallback to the API for missing ids."""
     cached = media_factory(1, "cached")
     missing = media_factory(2, "missing")
-    client.offline_anilist_entries[cached.id] = cached
+    client._list_cache[cached.id] = cached
+    client._schedule_list_refresh = lambda: None  # ty:ignore[invalid-assignment]
 
     async def fake_request(
         query: str, variables: dict | None = None, retry_count: int = 0, **_: Any
@@ -703,7 +831,7 @@ async def test_batch_get_anime_mixed_cache_uses_network(
     results = await client.batch_get_anime([cached.id, missing.id])
 
     assert set(media.id for media in results) == {cached.id, missing.id}
-    assert missing.id in client.offline_anilist_entries
+    assert missing.id in client._list_cache
 
 
 @pytest.mark.asyncio
