@@ -57,7 +57,11 @@ class AnilistListProvider(ListProvider):
         """Perform any asynchronous startup work before the provider is used."""
         self.log.debug("Initializing AniList provider client")
         await self._client.initialize()
-        user = await self._client.get_user()
+        if not self._client.user:
+            raise RuntimeError(
+                "Failed to fetch AniList user during provider initialization"
+            )
+        user = self._client.user
         self._user = ListUser(
             key=str(user.id),
             title=user.name,
