@@ -39,6 +39,40 @@ def client() -> AnilistClient:
     )
 
 
+def test_default_rate_limiter_is_shared_across_clients() -> None:
+    """Clients without a custom limit should reuse one global limiter."""
+    first = AnilistClient(
+        anilist_token="token",
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+    )
+    second = AnilistClient(
+        anilist_token="token",
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+    )
+
+    assert first.rate_limit is None
+    assert second.rate_limit is None
+    assert first._request_limiter is second._request_limiter
+
+
+def test_custom_rate_limiter_is_local_per_client() -> None:
+    """Custom limits should create per-client limiters and convert to req/sec."""
+    first = AnilistClient(
+        anilist_token="token",
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        rate_limit=120,
+    )
+    second = AnilistClient(
+        anilist_token="token",
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        rate_limit=120,
+    )
+
+    assert first._request_limiter is not second._request_limiter
+    assert first._request_limiter.rate == pytest.approx(2.0)
+    assert second._request_limiter.rate == pytest.approx(2.0)
+
+
 @pytest.mark.asyncio
 async def test_get_session_creates_and_reuses_client_session(
     monkeypatch: pytest.MonkeyPatch,
@@ -150,7 +184,7 @@ async def test_get_user_returns_viewer_payload(client: AnilistClient):
             }
         }
 
-    client._make_request = fake_request
+    client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
     viewer = await client.get_user()
 
@@ -167,7 +201,7 @@ async def test_get_anime_prefers_cached_entry(client: AnilistClient, media_facto
     async def should_not_call(*_args: Any, **_kwargs: Any) -> dict:
         raise AssertionError("Network should not be called for cached anime")
 
-    client._make_request = should_not_call
+    client._make_request = should_not_call  # ty:ignore[invalid-assignment]
     client._schedule_list_refresh = lambda: None  # ty:ignore[invalid-assignment]
 
     result = await client.get_anime(cached_media.id)
@@ -195,7 +229,7 @@ async def test_batch_get_anime_fetches_missing_ids(
             }
         }
 
-    client._make_request = fake_request  # type: ignore
+    client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
     results = await client.batch_get_anime([cached_media.id, fetched_media.id])
 
@@ -218,7 +252,7 @@ async def test_batch_get_anime_returns_cached_when_all_present(
     async def should_not_call(*_args: Any, **_kwargs: Any) -> dict:
         raise AssertionError("Network should not be called when all entries are cached")
 
-    client._make_request = should_not_call
+    client._make_request = should_not_call  # ty:ignore[invalid-assignment]
 
     results = await client.batch_get_anime([first.id, second.id])
 
@@ -308,7 +342,7 @@ async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
     async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
         return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
 
-    client._make_request = fake_request
+    client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
     await client.update_anime_entry(entry)
 
@@ -372,7 +406,7 @@ async def test_update_anime_entry_invalidates_cached_backup(
             return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
         raise AssertionError(query)
 
-    client._make_request = fake_request
+    client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
     first_backup = json.loads(await client.backup_anilist())
     await client.update_anime_entry(entry)
@@ -402,7 +436,7 @@ async def test_update_anime_entry_clears_search_cache(client: AnilistClient):
         return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
 
     client._search_anime = cast(Any, fake_search)
-    client._make_request = fake_request
+    client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
     await client.update_anime_entry(entry)
 
@@ -431,7 +465,7 @@ async def test_delete_anime_entry_removes_cache(
     async def fake_request(*_: Any, **__: Any) -> dict:
         return {"data": {"DeleteMediaListEntry": {"deleted": True}}}
 
-    client._make_request = fake_request
+    client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
     deleted = await client.delete_anime_entry(media.media_list_entry.id, media.id)
 
@@ -470,7 +504,7 @@ async def test_backup_anilist_returns_sanitized_json(client: AnilistClient):
         assert variables == {"userId": 1, "type": "ANIME", "chunk": 0}
         return {"data": {"MediaListCollection": collection.model_dump()}}
 
-    client._make_request = fake_request  # type: ignore
+    client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
     backup_payload = await client.backup_anilist()
     parsed = json.loads(backup_payload)
@@ -503,7 +537,7 @@ async def test_fetch_list_collection_keeps_media_cache_metadata_only(
             }
         }
 
-    client._make_request = fake_request
+    client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
     await client._fetch_list_collection()
 
@@ -796,7 +830,7 @@ async def test_get_anime_fetches_from_api_when_not_cached(
     async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
         return {"data": {"Media": media.model_dump()}}
 
-    client._make_request = fake_request
+    client._make_request = fake_request  # ty:ignore[invalid-assignment]
 
     result = await client.get_anime(media.id)
 

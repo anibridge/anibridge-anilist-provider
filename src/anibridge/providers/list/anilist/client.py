@@ -6,7 +6,7 @@ import importlib.metadata
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
-from typing import Any
+from typing import Any, ClassVar
 
 import aiohttp
 from anibridge.utils.cache import TTLDict, ttl_cache
@@ -27,8 +27,7 @@ from anibridge.providers.list.anilist.models import (
 
 __all__ = ["AnilistClient"]
 
-# Rate limit of 30 req/min with a burst capacity of 4
-anilist_limiter = Limiter(rate=30 / 60, capacity=4)
+global_anilist_limiter = Limiter(30 / 60, capacity=4)
 
 
 class AnilistClient:
@@ -39,18 +38,38 @@ class AnilistClient:
     rate limiting and local caching to optimize API usage.
     """
 
-    API_URL = "https://graphql.anilist.co"
+    API_URL: ClassVar[str] = "https://graphql.anilist.co"
 
-    def __init__(self, anilist_token: str, *, logger: ProviderLogger) -> None:
+    def __init__(
+        self,
+        anilist_token: str,
+        logger: ProviderLogger,
+        rate_limit: int | None = None,
+    ) -> None:
         """Initialize the AniList client.
 
         Args:
             anilist_token (str): Authentication token for AniList API.
+            rate_limit (int | None): The maximum number of API requests per minute.
             logger (ProviderLogger): Injected provider logger.
         """
         self.anilist_token = anilist_token
+        self.rate_limit = rate_limit
         self.log = logger
         self._session: aiohttp.ClientSession | None = None
+
+        if self.rate_limit is None:
+            self.log.debug(
+                "Using shared global AniList rate limiter with %s requests per minute",
+                global_anilist_limiter.rate,
+            )
+            self._request_limiter = global_anilist_limiter
+        else:
+            self.log.debug(
+                "Using local AniList rate limiter with %s requests per minute",
+                self.rate_limit,
+            )
+            self._request_limiter = Limiter(self.rate_limit / 60, capacity=1)
 
         self.user: User | None = None
         self.user_timezone: tzinfo = UTC
@@ -555,7 +574,6 @@ class AnilistClient:
             },
         )
 
-    @anilist_limiter
     async def _make_request(
         self, query: str, variables: dict | str | None = None, retry_count: int = 0
     ) -> dict:
@@ -566,6 +584,8 @@ class AnilistClient:
         """
         if retry_count >= 3:
             raise aiohttp.ClientError("Failed to make request after 3 tries")
+
+        await self._request_limiter.acquire(asynchronous=True)
 
         session = await self._get_session()
 

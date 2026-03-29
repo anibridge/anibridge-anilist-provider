@@ -402,6 +402,28 @@ def test_provider_requires_token() -> None:
         )
 
 
+def test_provider_default_rate_limit_uses_global_limiter() -> None:
+    """When rate_limit is omitted, provider should keep it as None."""
+    provider = AnilistListProvider(
+        logger=cast(ProviderLogger, logging.getLogger("tests.list")),
+        config={"token": "abc"},
+    )
+
+    assert provider.parsed_config.rate_limit is None
+    assert provider._client.rate_limit is None
+
+
+def test_provider_passes_custom_rate_limit_to_client() -> None:
+    """Configured rate_limit should be forwarded to the AniList client."""
+    provider = AnilistListProvider(
+        logger=cast(ProviderLogger, logging.getLogger("tests.list")),
+        config={"token": "abc", "rate_limit": 90},
+    )
+
+    assert provider.parsed_config.rate_limit == 90
+    assert provider._client.rate_limit == 90
+
+
 def test_entry_started_and_finished_setter_respects_user_timezone(
     entry_factory: Callable[[Media], AnilistListEntry],
     fake_client: FakeAnilistClient,

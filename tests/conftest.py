@@ -1,10 +1,11 @@
 """Common pytest fixtures for the AniList provider test-suite."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import cast
 
 import pytest
+from anibridge.utils.limiter import Limiter
 from anibridge.utils.types import ProviderLogger
 
 from anibridge.providers.list.anilist.client import AnilistClient
@@ -103,11 +104,15 @@ def entry_factory(provider: AnilistListProvider) -> Callable[[Media], AnilistLis
 
 
 @pytest.fixture(autouse=True)
-def disable_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Remove runtime wrappers so tests stay fast and loop-safe."""
+def disable_rate_limiter(monkeypatch: pytest.MonkeyPatch) -> Generator:
+    """Disable limiter behavior and unwrap decorated methods for fast tests."""
+    previous = Limiter.DISABLED
+    Limiter.DISABLED = True
     wrapped = getattr(AnilistClient._make_request, "__wrapped__", None)
     if wrapped is not None:
         monkeypatch.setattr(AnilistClient, "_make_request", wrapped)
     search_wrapped = getattr(AnilistClient._search_anime, "__wrapped__", None)
     if search_wrapped is not None:
         monkeypatch.setattr(AnilistClient, "_search_anime", search_wrapped)
+    yield
+    Limiter.DISABLED = previous
