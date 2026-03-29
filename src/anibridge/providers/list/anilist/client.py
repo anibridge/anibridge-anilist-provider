@@ -61,7 +61,7 @@ class AnilistClient:
         if self.rate_limit is None:
             self.log.debug(
                 "Using shared global AniList rate limiter with %s requests per minute",
-                global_anilist_limiter.rate,
+                global_anilist_limiter.rate * 60,
             )
             self._request_limiter = global_anilist_limiter
         else:
