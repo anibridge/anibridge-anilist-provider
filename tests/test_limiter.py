@@ -22,7 +22,7 @@ def test_acquire_sync_mode_works() -> None:
     """Unified acquire should support blocking mode."""
     limiter = Limiter(60 / 60, capacity=1)
 
-    assert limiter.acquire(asynchronous=False) is None
+    assert limiter.acquire() is None
 
 
 @pytest.mark.asyncio
@@ -30,4 +30,4 @@ async def test_acquire_async_mode_works() -> None:
     """Unified acquire should support async mode."""
     limiter = Limiter(60 / 60, capacity=1)
 
-    await limiter.acquire(asynchronous=True)
+    await limiter.acquire()  # ty:ignore[invalid-await]

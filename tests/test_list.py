@@ -149,10 +149,16 @@ class StubAnilistClient:
         self.initialize_called = False
         self.backup_value = "backup-data"
         self.restored_payload: str | None = None
+        self.user: AnilistAPIUser | None = None
 
     async def initialize(self) -> None:
         """Record that initialization was invoked."""
         self.initialize_called = True
+        self.user = AnilistAPIUser(
+            id=1,
+            name="Remote User",
+            media_list_options=MediaListOptions(score_format=ScoreFormat.POINT_5),
+        )
 
     async def get_user(self) -> AnilistAPIUser:
         """Return a deterministic AniList API user payload."""
