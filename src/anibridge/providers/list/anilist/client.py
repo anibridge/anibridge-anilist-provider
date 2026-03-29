@@ -585,7 +585,10 @@ class AnilistClient:
         if retry_count >= 3:
             raise aiohttp.ClientError("Failed to make request after 3 tries")
 
-        await self._request_limiter.acquire(asynchronous=True)
+        await self._request_limiter.acquire()  # ty:ignore[invalid-await]
+        # TODO: ty can't verify this is awaitable due to the conditional async/sync.
+        # Switch to below in next release
+        # await self._request_limiter.acquire(asynchronous=True)
 
         session = await self._get_session()
 
