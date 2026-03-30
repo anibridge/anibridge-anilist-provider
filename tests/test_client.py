@@ -652,8 +652,10 @@ class _FakeSession:
 
 
 @pytest.mark.asyncio
-async def test_make_request_retries_rate_limit(monkeypatch: pytest.MonkeyPatch):
-    """Rate limit responses should trigger a retry after sleeping."""
+async def test_make_request_fails_fast_on_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """429 responses should fail immediately and never retry."""
     session = _FakeSession(
         [
             _ResponseContext(429, headers={"Retry-After": "0"}),
@@ -677,38 +679,11 @@ async def test_make_request_retries_rate_limit(monkeypatch: pytest.MonkeyPatch):
     client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
-    result = await client._make_request("query")
+    with pytest.raises(aiohttp.ClientError, match="rate limited"):
+        await client._make_request("query")
 
-    assert result["data"]["ok"] is True
-    assert sleep_calls >= 1
-
-
-@pytest.mark.asyncio
-async def test_make_request_retries_bad_gateway(monkeypatch: pytest.MonkeyPatch):
-    """502 responses should also be retried using the same session."""
-    session = _FakeSession(
-        [
-            _ResponseContext(502),
-            _ResponseContext(200, payload={"data": {"ok": 2}}),
-        ]
-    )
-    client = AnilistClient(
-        anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
-    )
-
-    async def fake_get_session() -> _FakeSession:
-        return session
-
-    async def fake_sleep(_seconds: float) -> None:
-        return None
-
-    client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
-    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
-
-    result = await client._make_request("query")
-
-    assert result["data"]["ok"] == 2
+    assert sleep_calls == 0
+    assert len(session.responses) == 1
 
 
 @pytest.mark.asyncio
@@ -716,7 +691,7 @@ async def test_make_request_recovers_from_client_error(monkeypatch: pytest.Monke
     """Unexpected client exceptions should be retried up to the limit."""
     session = _FakeSession(
         [
-            aiohttp.ClientError("boom"),
+            aiohttp.ClientConnectionError("boom"),
             _ResponseContext(200, payload={"data": {"ok": 3}}),
         ]
     )
@@ -744,7 +719,7 @@ async def test_make_request_raises_after_three_failures(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """_make_request should raise once the retry budget is exhausted."""
-    session = _FakeSession([cast(object, aiohttp.ClientError("boom"))] * 4)
+    session = _FakeSession([cast(object, aiohttp.ClientConnectionError("boom"))] * 4)
     client = AnilistClient(
         anilist_token="token",
         logger=cast(ProviderLogger, logging.getLogger("tests.client")),
@@ -761,6 +736,36 @@ async def test_make_request_raises_after_three_failures(
 
     with pytest.raises(aiohttp.ClientError):
         await client._make_request("query")
+
+
+@pytest.mark.asyncio
+async def test_make_request_fails_fast_on_unauthorized(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """401 responses should not retry and should raise a clear auth error."""
+    session = _FakeSession([_ResponseContext(401), _ResponseContext(200)])
+    client = AnilistClient(
+        anilist_token="token",
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+    )
+
+    async def fake_get_session() -> _FakeSession:
+        return session
+
+    sleep_calls = 0
+
+    async def fake_sleep(_seconds: float) -> None:
+        nonlocal sleep_calls
+        sleep_calls += 1
+
+    client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(aiohttp.ClientError, match="unauthorized"):
+        await client._make_request("query")
+
+    assert sleep_calls == 0
+    assert len(session.responses) == 1
 
 
 def _media_list(media_id: int) -> MediaList:
