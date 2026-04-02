@@ -1,6 +1,6 @@
 [project]
 name = "anibridge-anilist-provider"
-version = "0.2.0b12"
+version = "0.2.0"
 description = "AniList provider for the AniBridge project."
 license = "MIT"
 license-files = ["LICENSE"]
