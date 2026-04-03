@@ -457,7 +457,12 @@ class AnilistClient:
                 }}
             }}
             """
-            response = await self._make_request(query, {"ids": batch})
+            try:
+                response = await self._make_request(query, {"ids": batch})
+            except aiohttp.ClientError as exc:
+                self.log.warning("Batch fetch failed for IDs %s", batch, exc_info=exc)
+                continue
+
             for raw in response.get("data", {}).get("Page", {}).get("media", []) or []:
                 media = Media(**raw)
                 fetched[media.id] = media
