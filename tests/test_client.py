@@ -652,10 +652,10 @@ class _FakeSession:
 
 
 @pytest.mark.asyncio
-async def test_make_request_fails_fast_on_rate_limit(
+async def test_make_request_retries_on_rate_limit(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """429 responses should fail immediately and never retry."""
+    """429 responses should be retried and can recover within the budget."""
     session = _FakeSession(
         [
             _ResponseContext(429, headers={"Retry-After": "0"}),
@@ -679,11 +679,47 @@ async def test_make_request_fails_fast_on_rate_limit(
     client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
+    result = await client._make_request("query")
+
+    assert result["data"]["ok"] is True
+    assert sleep_calls == 1
+    assert len(session.responses) == 0
+
+
+@pytest.mark.asyncio
+async def test_make_request_raises_after_rate_limit_retries_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """429 responses should raise after exhausting the retry budget."""
+    session = _FakeSession(
+        [
+            _ResponseContext(429, headers={"Retry-After": "0"}),
+            _ResponseContext(429, headers={"Retry-After": "0"}),
+            _ResponseContext(429, headers={"Retry-After": "0"}),
+        ]
+    )
+    client = AnilistClient(
+        anilist_token="token",
+        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+    )
+
+    async def fake_get_session() -> _FakeSession:
+        return session
+
+    sleep_calls = 0
+
+    async def fake_sleep(_seconds: float) -> None:
+        nonlocal sleep_calls
+        sleep_calls += 1
+
+    client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
     with pytest.raises(aiohttp.ClientError, match="rate limited"):
         await client._make_request("query")
 
-    assert sleep_calls == 0
-    assert len(session.responses) == 1
+    assert sleep_calls == 2
+    assert len(session.responses) == 0
 
 
 @pytest.mark.asyncio
@@ -761,7 +797,7 @@ async def test_make_request_fails_fast_on_unauthorized(
     client._get_session = fake_get_session  # ty:ignore[invalid-assignment]
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
-    with pytest.raises(aiohttp.ClientError, match="unauthorized"):
+    with pytest.raises(aiohttp.ClientError, match="Unauthorized"):
         await client._make_request("query")
 
     assert sleep_calls == 0
