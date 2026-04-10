@@ -576,6 +576,15 @@ async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
         recorded_entries = entries
         return {entry.media_id for entry in entries}
 
+    async def fake_fetch_list_collection() -> MediaListCollectionWithMedia:
+        return MediaListCollectionWithMedia.model_construct(
+            user=User.model_construct(id=1, name="Viewer"),
+            lists=[],
+            has_next_chunk=False,
+        )
+
+    client.user = User.model_construct(id=1, name="Viewer")
+    client._fetch_list_collection = fake_fetch_list_collection  # ty:ignore[invalid-assignment]
     client.batch_update_anime_entries = fake_batch_update  # ty:ignore[invalid-assignment]
 
     await client.restore_anilist(backup)
