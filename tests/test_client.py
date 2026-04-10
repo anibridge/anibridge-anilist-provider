@@ -585,6 +585,64 @@ async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
 
 
 @pytest.mark.asyncio
+async def test_restore_anilist_deletes_entries_missing_from_backup(
+    client: AnilistClient,
+):
+    """restore_anilist should delete current entries that are absent from backup."""
+    kept_entry = MediaList(
+        id=11, user_id=1, media_id=222, status=MediaListStatus.CURRENT
+    )
+    removed_entry = _build_saved_entry(333, "remove me")
+    current_collection = MediaListCollectionWithMedia.model_construct(
+        user=User.model_construct(id=1, name="Viewer"),
+        lists=[
+            MediaListGroupWithMedia.model_construct(
+                entries=[removed_entry],
+                name="Watching",
+                status=MediaListStatus.CURRENT,
+            )
+        ],
+        has_next_chunk=False,
+    )
+    backup = MediaListCollection.model_construct(
+        user=None,
+        lists=[
+            MediaListGroup.model_construct(
+                entries=[kept_entry],
+                name="Watching",
+                status=MediaListStatus.CURRENT,
+            )
+        ],
+        has_next_chunk=False,
+    ).model_dump_json()
+
+    updated_entries: list[MediaList] | None = None
+    deleted_entries: list[tuple[int, int]] = []
+
+    async def fake_fetch_list_collection() -> MediaListCollectionWithMedia:
+        return current_collection
+
+    async def fake_batch_update(entries: list[MediaList]) -> set[int]:
+        nonlocal updated_entries
+        updated_entries = entries
+        return {entry.media_id for entry in entries}
+
+    async def fake_delete(entry_id: int, media_id: int) -> bool:
+        deleted_entries.append((entry_id, media_id))
+        return True
+
+    client.user = User.model_construct(id=1, name="Viewer")
+    client._fetch_list_collection = fake_fetch_list_collection  # ty:ignore[invalid-assignment]
+    client.batch_update_anime_entries = fake_batch_update  # ty:ignore[invalid-assignment]
+    client.delete_anime_entry = fake_delete  # ty:ignore[invalid-assignment]
+
+    await client.restore_anilist(backup)
+
+    assert updated_entries == [kept_entry]
+    assert deleted_entries == [(removed_entry.id, removed_entry.media_id)]
+
+
+@pytest.mark.asyncio
 async def test_media_list_entry_to_media_merges_metadata(client: AnilistClient):
     """_to_media should combine list and media fields."""
     saved_entry = _build_saved_entry(515, "merge target")

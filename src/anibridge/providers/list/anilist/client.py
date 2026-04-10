@@ -557,9 +557,22 @@ class AnilistClient:
         """Restores the user's AniList data from a JSON backup."""
         json_data = json.loads(backup)
         data = MediaListCollection(**json_data)
-        await self.batch_update_anime_entries(
-            [entry for li in data.lists for entry in li.entries]
-        )
+        restored_entries = [entry for li in data.lists for entry in li.entries]
+        restored_media_ids = {entry.media_id for entry in restored_entries}
+
+        current = await self._fetch_list_collection()
+        entries_to_delete = [
+            entry
+            for li in current.lists
+            for entry in li.entries
+            if entry.media_id not in restored_media_ids
+        ]
+
+        if restored_entries:
+            await self.batch_update_anime_entries(restored_entries)
+
+        for entry in entries_to_delete:
+            await self.delete_anime_entry(entry.id, entry.media_id)
 
     @staticmethod
     def _to_media(entry: MediaListWithMedia) -> Media:
