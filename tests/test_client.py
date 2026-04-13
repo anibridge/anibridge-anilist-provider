@@ -576,12 +576,8 @@ async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
         recorded_entries = entries
         return {entry.media_id for entry in entries}
 
-    async def fake_fetch_list_collection() -> MediaListCollectionWithMedia:
-        return MediaListCollectionWithMedia.model_construct(
-            user=User.model_construct(id=1, name="Viewer"),
-            lists=[],
-            has_next_chunk=False,
-        )
+    async def fake_fetch_list_collection() -> None:
+        pass  # _list_cache is empty
 
     client.user = User.model_construct(id=1, name="Viewer")
     client._fetch_list_collection = fake_fetch_list_collection  # ty:ignore[invalid-assignment]
@@ -602,17 +598,6 @@ async def test_restore_anilist_deletes_entries_missing_from_backup(
         id=11, user_id=1, media_id=222, status=MediaListStatus.CURRENT
     )
     removed_entry = _build_saved_entry(333, "remove me")
-    current_collection = MediaListCollectionWithMedia.model_construct(
-        user=User.model_construct(id=1, name="Viewer"),
-        lists=[
-            MediaListGroupWithMedia.model_construct(
-                entries=[removed_entry],
-                name="Watching",
-                status=MediaListStatus.CURRENT,
-            )
-        ],
-        has_next_chunk=False,
-    )
     backup = MediaListCollection.model_construct(
         user=None,
         lists=[
@@ -628,8 +613,9 @@ async def test_restore_anilist_deletes_entries_missing_from_backup(
     updated_entries: list[MediaList] | None = None
     deleted_entries: list[tuple[int, int]] = []
 
-    async def fake_fetch_list_collection() -> MediaListCollectionWithMedia:
-        return current_collection
+    async def fake_fetch_list_collection() -> None:
+        # Simulate the side-effect: populate _list_cache with current entries
+        client._list_cache[removed_entry.media_id] = client._to_media(removed_entry)
 
     async def fake_batch_update(entries: list[MediaList]) -> set[int]:
         nonlocal updated_entries

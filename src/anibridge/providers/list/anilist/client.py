@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import importlib.metadata
 import json
+from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
 from typing import Any, ClassVar
@@ -20,6 +21,7 @@ from anibridge.providers.list.anilist.models import (
     MediaListCollection,
     MediaListCollectionWithMedia,
     MediaListGroup,
+    MediaListStatus,
     MediaListWithMedia,
     MediaStatus,
     User,
@@ -74,10 +76,10 @@ class AnilistClient:
         self.user: User | None = None
         self.user_timezone: tzinfo = UTC
 
-        self._bg_task: asyncio.Task[MediaListCollectionWithMedia] | None = None
+        self._bg_task: asyncio.Task[None] | None = None
         self._cache_epoch = 0
         self._list_cache: dict[int, Media] = {}
-        self._media_cache: TTLDict[int, Media] = TTLDict(ttl=43200)
+        self._media_cache: TTLDict[int, Media] = TTLDict(ttl=43200, maxsize=2048)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create the aiohttp session."""
@@ -166,7 +168,7 @@ class AnilistClient:
         if (task := self._bg_task) and not task.done():
             return
 
-        def _on_done(t: asyncio.Task[MediaListCollectionWithMedia]) -> None:
+        def _on_done(t: asyncio.Task[None]) -> None:
             if not t.cancelled() and (exc := t.exception()):
                 self.log.warning("User-list cache refresh failed", exc_info=exc)
 
@@ -471,7 +473,7 @@ class AnilistClient:
         return fetched
 
     @ttl_cache(ttl=3600)
-    async def _fetch_list_collection(self) -> MediaListCollectionWithMedia:
+    async def _fetch_list_collection(self) -> None:
         """Fetch all non-custom AniList list entries and populate local cache."""
         if not self.user:
             raise aiohttp.ClientError("User information is required for fetching lists")
@@ -487,7 +489,7 @@ class AnilistClient:
         self.log.debug("Refreshing user list cache from AniList API")
         refresh_epoch = self._cache_epoch
 
-        data = MediaListCollectionWithMedia(user=self.user, has_next_chunk=True)
+        has_next_chunk = True
         refreshed_list_cache: dict[int, Media] = {}
         variables: dict[str, Any] = {
             "userId": self.user.id,
@@ -495,20 +497,19 @@ class AnilistClient:
             "chunk": 0,
         }
 
-        while data.has_next_chunk:
+        while has_next_chunk:
             response = await self._make_request(query, variables)
             if refresh_epoch != self._cache_epoch:
                 raise asyncio.CancelledError
             chunk = MediaListCollectionWithMedia(
                 **response["data"]["MediaListCollection"]
             )
-            data.has_next_chunk = chunk.has_next_chunk
+            has_next_chunk = bool(chunk.has_next_chunk)
             variables["chunk"] += 1
 
             for li in chunk.lists:
                 if li.is_custom_list:
                     continue
-                data.lists.append(li)
                 for entry in li.entries:
                     refreshed_list_cache[entry.media_id] = self._to_media(entry)
 
@@ -517,40 +518,37 @@ class AnilistClient:
 
         self._list_cache.clear()
         self._list_cache.update(refreshed_list_cache)
+        del refreshed_list_cache
         with contextlib.suppress(AttributeError):
             self._search_anime.cache_clear()
-
-        return data
 
     async def backup_anilist(self) -> str:
         """Creates a JSON backup of the user's AniList data."""
         if not self.user:
             raise aiohttp.ClientError("User information is required for deletions")
 
-        data = await self._fetch_list_collection()
+        await self._fetch_list_collection()
+
+        groups: dict[str | None, list[MediaList]] = defaultdict(list)
+        for media in self._list_cache.values():
+            if media.media_list_entry:
+                key = (
+                    media.media_list_entry.status.value
+                    if media.media_list_entry.status
+                    else None
+                )
+                groups[key].append(media.media_list_entry)
 
         sanitized = [
             MediaListGroup(
-                entries=[
-                    MediaList(
-                        **{
-                            f: getattr(e, f)
-                            for f in MediaList.model_fields
-                            if hasattr(e, f)
-                        }
-                    )
-                    for e in li.entries
-                ],
-                name=li.name,
-                is_custom_list=li.is_custom_list,
-                is_split_completed_list=li.is_split_completed_list,
-                status=li.status,
+                entries=entries,
+                status=MediaListStatus(status) if status else None,
             )
-            for li in data.lists
+            for status, entries in groups.items()
         ]
 
         return MediaListCollection(
-            user=data.user, lists=sanitized, has_next_chunk=data.has_next_chunk
+            user=self.user, lists=sanitized, has_next_chunk=False
         ).model_dump_json()
 
     async def restore_anilist(self, backup: str) -> None:
@@ -560,12 +558,12 @@ class AnilistClient:
         restored_entries = [entry for li in data.lists for entry in li.entries]
         restored_media_ids = {entry.media_id for entry in restored_entries}
 
-        current = await self._fetch_list_collection()
+        await self._fetch_list_collection()
         entries_to_delete = [
-            entry
-            for li in current.lists
-            for entry in li.entries
-            if entry.media_id not in restored_media_ids
+            media.media_list_entry
+            for media in self._list_cache.values()
+            if media.media_list_entry
+            and media.media_list_entry.media_id not in restored_media_ids
         ]
 
         if restored_entries:

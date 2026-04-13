@@ -18,7 +18,6 @@ from anibridge.providers.list.anilist.list import (
 from anibridge.providers.list.anilist.models import (
     FuzzyDate,
     Media,
-    MediaCoverImage,
     MediaFormat,
     MediaListOptions,
     MediaListStatus,
