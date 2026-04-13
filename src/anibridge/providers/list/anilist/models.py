@@ -418,10 +418,10 @@ class MediaListCollection[GroupType: MediaListGroup](AnilistBaseModel):
 class MediaCoverImage(AnilistBaseModel):
     """Model representing a media cover image."""
 
-    extra_large: str | None = None
-    large: str | None = None
+    # extra_large: str | None = None
+    # large: str | None = None
     medium: str | None = None
-    color: str | None = None
+    # color: str | None = None
 
 
 class MediaWithoutList(AnilistBaseModel):

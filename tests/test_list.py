@@ -659,19 +659,6 @@ def test_list_media_poster_image_handles_missing_cover(
     assert AnilistListMedia(provider, media).poster_image is None
 
 
-def test_media_poster_image_falls_back_to_color(
-    entry_factory: Callable[[Media], AnilistListEntry],
-    media_factory: Callable[[int, str], Media],
-):
-    """Poster image selection should walk the cover image fallbacks."""
-    media = media_factory(606, "coverless show")
-    assert media.media_list_entry is not None
-    media.cover_image = MediaCoverImage(color="#123456")
-    entry = entry_factory(media)
-
-    assert entry.media().poster_image == "#123456"
-
-
 @pytest.mark.asyncio
 async def test_clear_cache_empties_fake_storage(
     provider: AnilistListProvider,
