@@ -45,7 +45,7 @@ def media_factory() -> Callable[[int, str], Media]:
             format=MediaFormat.TV,
             status=MediaStatus.RELEASING,
             episodes=24,
-            cover_image=MediaCoverImage(extra_large="xl.jpg", medium="m.jpg"),
+            cover_image=MediaCoverImage(medium="m.jpg"),
             media_list_entry=entry,
         )
 
