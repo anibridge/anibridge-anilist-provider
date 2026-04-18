@@ -46,65 +46,12 @@ class MediaStatus(AnilistBaseEnum):
 class MediaListStatus(AnilistBaseEnum):
     """Enum representing status of a media list entry (CURRENT, COMPLETED, etc)."""
 
-    _ignore_ = ["__priority"]  # noqa: RUF012
-
     CURRENT = "CURRENT"
     PLANNING = "PLANNING"
     COMPLETED = "COMPLETED"
     DROPPED = "DROPPED"
     PAUSED = "PAUSED"
     REPEATING = "REPEATING"
-
-    __priority: ClassVar[dict[str, int]] = {
-        "PLANNING": 1,
-        "CURRENT": 2,
-        "PAUSED": 2,
-        "DROPPED": 2,
-        "COMPLETED": 3,
-        "REPEATING": 3,
-    }
-
-    def __eq__(self, other: object) -> bool:
-        """Check equality with another MediaListStatus."""
-        if not isinstance(other, MediaListStatus):
-            return NotImplemented
-        return self.value == other.value
-
-    def __ne__(self, other: object) -> bool:
-        """Check inequality with another MediaListStatus."""
-        if not isinstance(other, MediaListStatus):
-            return NotImplemented
-        return self.value != other.value
-
-    def __lt__(self, other: object) -> bool:
-        """Check if status is less than another based on priority."""
-        if not isinstance(other, MediaListStatus):
-            return NotImplemented
-        return (
-            self.value != other.value
-            and self.__priority[self.value] < self.__priority[other.value]
-        )
-
-    def __le__(self, other: object) -> bool:
-        """Check if status is less than or equal to another based on priority."""
-        if not isinstance(other, MediaListStatus):
-            return NotImplemented
-        return self.__priority[self.value] <= self.__priority[other.value]
-
-    def __gt__(self, other: object) -> bool:
-        """Check if status is greater than another based on priority."""
-        if not isinstance(other, MediaListStatus):
-            return NotImplemented
-        return (
-            self.value != other.value
-            and self.__priority[self.value] > self.__priority[other.value]
-        )
-
-    def __ge__(self, other: object) -> bool:
-        """Check if status is greater than or equal to another based on priority."""
-        if not isinstance(other, MediaListStatus):
-            return NotImplemented
-        return self.__priority[self.value] >= self.__priority[other.value]
 
 
 class Season(AnilistBaseEnum):
