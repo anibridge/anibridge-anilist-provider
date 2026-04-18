@@ -605,10 +605,7 @@ class AnilistClient:
         session = await self._get_session()
         for attempt in range(1, max_attempts + 1):
             try:
-                await self._request_limiter.acquire()  # ty:ignore[invalid-await]
-                # TODO: ty can't verify an awaitable due to the conditional async/sync.
-                # Switch to below in next release
-                # await self._request_limiter.acquire(asynchronous=True)
+                await self._request_limiter.acquire(asynchronous=True)
 
                 async with session.post(
                     self.API_URL, json={"query": query, "variables": variables or {}}
