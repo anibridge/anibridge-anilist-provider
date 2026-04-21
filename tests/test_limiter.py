@@ -30,4 +30,4 @@ async def test_acquire_async_mode_works() -> None:
     """Unified acquire should support async mode."""
     limiter = Limiter(60 / 60, capacity=1)
 
-    await limiter.acquire()  # ty:ignore[invalid-await]
+    await limiter.acquire(asynchronous=True)

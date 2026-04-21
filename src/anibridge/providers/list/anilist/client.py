@@ -347,7 +347,7 @@ class AnilistClient:
             ):
                 yield m
 
-    @ttl_cache(ttl=300)
+    @ttl_cache(ttl=300, maxsize=128)
     async def _search_anime(
         self, search_str: str, is_movie: bool | None, limit: int = 10
     ) -> list[Media]:
@@ -472,7 +472,7 @@ class AnilistClient:
 
         return fetched
 
-    @ttl_cache(ttl=3600)
+    @ttl_cache(ttl=3600, maxsize=1)
     async def _fetch_list_collection(self) -> None:
         """Fetch all non-custom AniList list entries and populate local cache."""
         if not self.user:
