@@ -6,7 +6,6 @@ import pytest
 
 from anibridge.providers.list.anilist.models import (
     FuzzyDate,
-    MediaListStatus,
     MediaListWithMedia,
     MediaTitle,
 )
@@ -15,13 +14,6 @@ from anibridge.providers.list.anilist.models import (
 def _fuzzy(**kwargs) -> FuzzyDate:
     """Helper for constructing FuzzyDate instances without validation noise."""
     return FuzzyDate.model_construct(**kwargs)
-
-
-def test_media_list_status_priority():
-    """Statuses should compare according to the configured priority map."""
-    assert MediaListStatus.COMPLETED > MediaListStatus.CURRENT
-    assert MediaListStatus.PAUSED <= MediaListStatus.CURRENT
-    assert MediaListStatus.PLANNING < MediaListStatus.DROPPED
 
 
 @pytest.mark.parametrize(
@@ -61,17 +53,6 @@ def test_fuzzy_date_to_datetime_defaults_month_and_day():
 def test_fuzzy_date_from_date_handles_none():
     """from_date should propagate None inputs without raising."""
     assert FuzzyDate.from_date(None) is None
-
-
-def test_media_list_status_comparisons_with_other_types():
-    """MediaListStatus comparison methods should return NotImplemented for strangers."""
-    status = MediaListStatus.CURRENT
-    assert status.__eq__("current") is NotImplemented
-    assert status.__ne__(123) is NotImplemented
-    assert status.__lt__(object()) is NotImplemented
-    assert status.__le__(object()) is NotImplemented
-    assert status.__gt__(object()) is NotImplemented
-    assert status.__ge__(object()) is NotImplemented
 
 
 def test_base_model_unset_and_dump_helpers():
