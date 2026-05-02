@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import importlib.metadata
 import json
+import time
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
@@ -41,6 +42,8 @@ class AnilistClient:
     """
 
     API_URL: ClassVar[str] = "https://graphql.anilist.co"
+    _LIST_REFRESH_DEBOUNCE_SECONDS: ClassVar[float] = 60.0
+    _LIST_REFRESH_MAX_STALENESS_SECONDS: ClassVar[float] = 1800.0
 
     def __init__(
         self,
@@ -78,6 +81,8 @@ class AnilistClient:
 
         self._bg_task: asyncio.Task[None] | None = None
         self._cache_epoch = 0
+        self._list_cache_dirty = False
+        self._last_list_refresh_at = time.monotonic()
         self._list_cache: dict[int, Media] = {}
         self._media_cache: TTLDict[int, Media] = TTLDict(ttl=43200, maxsize=2048)
 
@@ -110,16 +115,27 @@ class AnilistClient:
         """Clear in-memory caches for user list and general media lookups."""
         self._list_cache.clear()
         self._media_cache.clear()
+        self._list_cache_dirty = False
+        self._last_list_refresh_at = time.monotonic()
         self._invalidate_cached_views()
 
-    def _invalidate_cached_views(self) -> None:
-        """Invalidate derived cached views after list-state changes."""
+    def _invalidate_cached_views(
+        self, *, clear_list_collection_cache: bool = True
+    ) -> None:
+        """Invalidate derived cached views after list-state changes.
+
+        Args:
+            clear_list_collection_cache: Whether to clear the cached
+                `_fetch_list_collection` result. Mutations can skip this because
+                they already update the in-memory list cache directly.
+        """
         self._cache_epoch += 1
         if (task := self._bg_task) and not task.done():
             task.cancel()
         self._bg_task = None
-        with contextlib.suppress(AttributeError):
-            self._fetch_list_collection.cache_clear()
+        if clear_list_collection_cache:
+            with contextlib.suppress(AttributeError):
+                self._fetch_list_collection.cache_clear()
         with contextlib.suppress(AttributeError):
             self._search_anime.cache_clear()
 
@@ -160,19 +176,45 @@ class AnilistClient:
             self._list_cache[media.id] = media
 
     def _schedule_list_refresh(self) -> None:
-        """Schedule a background refresh when the user-list cache is stale.
+        """Schedule a background refresh when list state is dirty or stale."""
+        stale_for = time.monotonic() - self._last_list_refresh_at
+        is_stale = stale_for >= self._LIST_REFRESH_MAX_STALENESS_SECONDS
 
-        The @ttl_cache on _fetch_list_collection returns instantly from cache
-        when fresh, so this is a no-op in the common case.
-        """
-        if (task := self._bg_task) and not task.done():
+        if is_stale:
+            self._enqueue_list_refresh(debounce_seconds=0.0)
             return
 
+        if self._list_cache_dirty:
+            self._enqueue_list_refresh(
+                debounce_seconds=self._LIST_REFRESH_DEBOUNCE_SECONDS,
+            )
+
+    def _mark_list_cache_dirty(self) -> None:
+        """Mark list state dirty and debounce a single full refresh."""
+        self._list_cache_dirty = True
+        self._schedule_list_refresh()
+
+    def _enqueue_list_refresh(self, *, debounce_seconds: float) -> None:
+        """Queue one background list refresh, optionally debounced."""
+        if (task := self._bg_task) and not task.done():
+            task.cancel()
+            self._bg_task = None
+
+        async def _refresh() -> None:
+            if debounce_seconds > 0:
+                await asyncio.sleep(debounce_seconds)
+            with contextlib.suppress(AttributeError):
+                self._fetch_list_collection.cache_clear()
+            await self._fetch_list_collection()
+
         def _on_done(t: asyncio.Task[None]) -> None:
-            if not t.cancelled() and (exc := t.exception()):
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc:
                 self.log.warning("User-list cache refresh failed", exc_info=exc)
 
-        self._bg_task = task = asyncio.create_task(self._fetch_list_collection())
+        self._bg_task = task = asyncio.create_task(_refresh())
         task.add_done_callback(_on_done)
 
     async def get_user(self) -> User:
@@ -209,8 +251,9 @@ class AnilistClient:
         )
         saved = MediaListWithMedia(**response["data"]["SaveMediaListEntry"])
         self._list_cache[entry.media_id] = self._to_media(saved)
-        self._media_cache.clear()
-        self._invalidate_cached_views()
+        self._media_cache.pop(entry.media_id, None)
+        self._invalidate_cached_views(clear_list_collection_cache=False)
+        self._mark_list_cache_dirty()
 
     async def delete_anime_entry(self, entry_id: int, media_id: int) -> bool:
         """Deletes an anime entry from the authenticated user's list."""
@@ -231,7 +274,8 @@ class AnilistClient:
         response = await self._make_request(query, variables)
         self._list_cache.pop(media_id, None)
         self._media_cache.pop(media_id, None)
-        self._invalidate_cached_views()
+        self._invalidate_cached_views(clear_list_collection_cache=False)
+        self._mark_list_cache_dirty()
         return response["data"]["DeleteMediaListEntry"]["deleted"]
 
     async def batch_update_anime_entries(self, entries: list[MediaList]) -> set[int]:
@@ -309,8 +353,11 @@ class AnilistClient:
             if missing:
                 updated.update(await self._fallback_update(missing))
 
-        self._media_cache.clear()
-        self._invalidate_cached_views()
+        for media_id in updated:
+            self._media_cache.pop(media_id, None)
+        self._invalidate_cached_views(clear_list_collection_cache=False)
+        if updated:
+            self._mark_list_cache_dirty()
         return updated
 
     async def _fallback_update(self, entries: list[MediaList]) -> set[int]:
@@ -518,6 +565,8 @@ class AnilistClient:
 
         self._list_cache.clear()
         self._list_cache.update(refreshed_list_cache)
+        self._list_cache_dirty = False
+        self._last_list_refresh_at = time.monotonic()
         del refreshed_list_cache
         with contextlib.suppress(AttributeError):
             self._search_anime.cache_clear()

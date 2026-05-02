@@ -352,10 +352,10 @@ async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
 
 
 @pytest.mark.asyncio
-async def test_update_anime_entry_invalidates_cached_backup(
+async def test_update_anime_entry_preserves_local_backup_freshness_without_refetch(
     client: AnilistClient,
 ):
-    """Updating an entry should force backup_anilist to fetch fresh list data."""
+    """Updating an entry should keep backup data fresh from local cache updates."""
     client.user = User.model_construct(id=1, name="Backup Tester")
     entry = MediaList(
         id=10,
@@ -414,7 +414,9 @@ async def test_update_anime_entry_invalidates_cached_backup(
 
     assert first_backup["lists"][0]["entries"][0]["progress"] == 1
     assert second_backup["lists"][0]["entries"][0]["progress"] == 5
-    assert collection_calls == 2
+    # A mutation updates _list_cache directly, so backup should remain fresh
+    # without forcing another full MediaListCollection refresh.
+    assert collection_calls == 1
 
 
 @pytest.mark.asyncio
