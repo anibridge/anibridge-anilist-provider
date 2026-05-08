@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any, cast
 
 import aiohttp
+import msgspec
 import pytest
 from anibridge.utils.types import ProviderLogger
 
@@ -144,9 +145,7 @@ async def test_initialize_parses_user_timezone_offset(client: AnilistClient):
 
     # timezone without a sign should be treated as positive
     async def first_user() -> User:
-        return User.model_construct(
-            id=1, name="tz", options=UserOptions(timezone="02:30")
-        )
+        return User(id=1, name="tz", options=UserOptions(timezone="02:30"))
 
     async def noop() -> None:
         pass
@@ -159,9 +158,7 @@ async def test_initialize_parses_user_timezone_offset(client: AnilistClient):
 
     # negative offsets should also be parsed correctly
     async def second_user() -> User:
-        return User.model_construct(
-            id=1, name="tz", options=UserOptions(timezone="-05:00")
-        )
+        return User(id=1, name="tz", options=UserOptions(timezone="-05:00"))
 
     client.get_user = second_user  # ty:ignore[invalid-assignment]
     await client.initialize()
@@ -224,7 +221,7 @@ async def test_batch_get_anime_fetches_missing_ids(
         return {
             "data": {
                 "Page": {
-                    "media": [fetched_media.model_dump()],
+                    "media": [msgspec.json.decode(msgspec.json.encode(fetched_media))],
                 }
             }
         }
@@ -340,7 +337,13 @@ async def test_update_anime_entry_caches_saved_media(client: AnilistClient):
     saved_entry = _build_saved_entry(entry.media_id, "cache me")
 
     async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
-        return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
+        return {
+            "data": {
+                "SaveMediaListEntry": msgspec.json.decode(
+                    msgspec.json.encode(saved_entry)
+                )
+            }
+        }
 
     client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
@@ -356,7 +359,7 @@ async def test_update_anime_entry_preserves_local_backup_freshness_without_refet
     client: AnilistClient,
 ):
     """Updating an entry should keep backup data fresh from local cache updates."""
-    client.user = User.model_construct(id=1, name="Backup Tester")
+    client.user = User(id=1, name="Backup Tester")
     entry = MediaList(
         id=10,
         user_id=1,
@@ -403,7 +406,13 @@ async def test_update_anime_entry_preserves_local_backup_freshness_without_refet
         if "SaveMediaListEntry" in query:
             state["progress"] = 5
             saved_entry = _build_saved_entry(entry.media_id, "cache me")
-            return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
+            return {
+                "data": {
+                    "SaveMediaListEntry": msgspec.json.decode(
+                        msgspec.json.encode(saved_entry)
+                    )
+                }
+            }
         raise AssertionError(query)
 
     client._make_request = fake_request  #  ty:ignore[invalid-assignment]
@@ -435,7 +444,13 @@ async def test_update_anime_entry_clears_search_cache(client: AnilistClient):
     fake_search = CachedSearch()
 
     async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
-        return {"data": {"SaveMediaListEntry": saved_entry.model_dump()}}
+        return {
+            "data": {
+                "SaveMediaListEntry": msgspec.json.decode(
+                    msgspec.json.encode(saved_entry)
+                )
+            }
+        }
 
     client._search_anime = cast(Any, fake_search)
     client._make_request = fake_request  #  ty:ignore[invalid-assignment]
@@ -458,7 +473,7 @@ async def test_delete_anime_entry_removes_cache(
 ):
     """Successful deletes should purge cached entries by media id."""
     media = media_factory(303, "delete me")
-    client.user = User.model_construct(id=1, name="Tester")
+    client.user = User(id=1, name="Tester")
     client._list_cache[media.id] = media
     assert media.media_list_entry is not None, (
         "Precondition: media must have list entry"
@@ -478,23 +493,23 @@ async def test_delete_anime_entry_removes_cache(
 @pytest.mark.asyncio
 async def test_backup_anilist_returns_sanitized_json(client: AnilistClient):
     """backup_anilist should strip media metadata and populate the cache."""
-    user = User.model_construct(id=1, name="Backup Tester")
+    user = User(id=1, name="Backup Tester")
     client.user = user
 
     saved_entry = _build_saved_entry(404, "backup show")
-    list_with_media = MediaListGroupWithMedia.model_construct(
+    list_with_media = MediaListGroupWithMedia(
         entries=[saved_entry],
         name="Plan to Watch",
         is_custom_list=False,
         status=MediaListStatus.PLANNING,
     )
-    custom_group = MediaListGroupWithMedia.model_construct(
+    custom_group = MediaListGroupWithMedia(
         entries=[_build_saved_entry(999, "custom skip")],
         name="Custom",
         is_custom_list=True,
         status=MediaListStatus.CURRENT,
     )
-    collection = MediaListCollectionWithMedia.model_construct(
+    collection = MediaListCollectionWithMedia(
         user=user,
         lists=[list_with_media, custom_group],
         has_next_chunk=False,
@@ -504,7 +519,13 @@ async def test_backup_anilist_returns_sanitized_json(client: AnilistClient):
         _query: str, variables: dict | None = None, **_: Any
     ) -> dict:
         assert variables == {"userId": 1, "type": "ANIME", "chunk": 0}
-        return {"data": {"MediaListCollection": collection.model_dump()}}
+        return {
+            "data": {
+                "MediaListCollection": msgspec.json.decode(
+                    msgspec.json.encode(collection)
+                )
+            }
+        }
 
     client._make_request = fake_request  #  ty:ignore[invalid-assignment]
 
@@ -523,7 +544,7 @@ async def test_fetch_list_collection_keeps_media_cache_metadata_only(
     client: AnilistClient, media_factory: Callable[[int, str], Media]
 ):
     """A list refresh should not resurrect stale list-entry state from _media_cache."""
-    user = User.model_construct(id=1, name="Refresh Tester")
+    user = User(id=1, name="Refresh Tester")
     client.user = user
     media = media_factory(404, "stale list entry")
     client._remember(media)
@@ -559,17 +580,17 @@ async def test_backup_anilist_requires_user(client: AnilistClient):
 async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
     """restore_anilist should fan out the parsed entries to batch updates."""
     entry = MediaList(id=11, user_id=1, media_id=222, status=MediaListStatus.CURRENT)
-    group = MediaListGroup.model_construct(
+    group = MediaListGroup(
         entries=[entry],
         name="Watching",
         status=MediaListStatus.CURRENT,
     )
-    collection = MediaListCollection.model_construct(
+    collection = MediaListCollection(
         user=None,
         lists=[group],
         has_next_chunk=False,
     )
-    backup = collection.model_dump_json()
+    backup = msgspec.json.encode(collection).decode()
 
     recorded_entries: list[MediaList] | None = None
 
@@ -581,7 +602,7 @@ async def test_restore_anilist_invokes_batch_update(client: AnilistClient):
     async def fake_fetch_list_collection() -> None:
         pass  # _list_cache is empty
 
-    client.user = User.model_construct(id=1, name="Viewer")
+    client.user = User(id=1, name="Viewer")
     client._fetch_list_collection = fake_fetch_list_collection  # ty:ignore[invalid-assignment]
     client.batch_update_anime_entries = fake_batch_update  # ty:ignore[invalid-assignment]
 
@@ -600,17 +621,18 @@ async def test_restore_anilist_deletes_entries_missing_from_backup(
         id=11, user_id=1, media_id=222, status=MediaListStatus.CURRENT
     )
     removed_entry = _build_saved_entry(333, "remove me")
-    backup = MediaListCollection.model_construct(
+    backup = MediaListCollection(
         user=None,
         lists=[
-            MediaListGroup.model_construct(
+            MediaListGroup(
                 entries=[kept_entry],
                 name="Watching",
                 status=MediaListStatus.CURRENT,
             )
         ],
         has_next_chunk=False,
-    ).model_dump_json()
+    )
+    backup = msgspec.json.encode(backup).decode()
 
     updated_entries: list[MediaList] | None = None
     deleted_entries: list[tuple[int, int]] = []
@@ -628,7 +650,7 @@ async def test_restore_anilist_deletes_entries_missing_from_backup(
         deleted_entries.append((entry_id, media_id))
         return True
 
-    client.user = User.model_construct(id=1, name="Viewer")
+    client.user = User(id=1, name="Viewer")
     client._fetch_list_collection = fake_fetch_list_collection  # ty:ignore[invalid-assignment]
     client.batch_update_anime_entries = fake_batch_update  # ty:ignore[invalid-assignment]
     client.delete_anime_entry = fake_delete  # ty:ignore[invalid-assignment]
@@ -924,7 +946,7 @@ async def test_get_anime_fetches_from_api_when_not_cached(
     client._schedule_list_refresh = lambda: None  # ty:ignore[invalid-assignment]
 
     async def fake_request(*_args: Any, **_kwargs: Any) -> dict:
-        return {"data": {"Media": media.model_dump()}}
+        return {"data": {"Media": msgspec.json.decode(msgspec.json.encode(media))}}
 
     client._make_request = fake_request  # ty:ignore[invalid-assignment]
 
@@ -951,7 +973,7 @@ async def test_batch_get_anime_mixed_cache_uses_network(
         return {
             "data": {
                 "Page": {
-                    "media": [missing.model_dump()],
+                    "media": [msgspec.json.decode(msgspec.json.encode(missing))],
                 }
             }
         }

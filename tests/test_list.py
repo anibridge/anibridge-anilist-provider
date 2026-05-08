@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 from anibridge.list import ListMediaType, ListStatus
@@ -24,9 +24,7 @@ from anibridge.providers.list.anilist.models import (
     ScoreFormat,
 )
 from anibridge.providers.list.anilist.models import User as AnilistAPIUser
-
-if TYPE_CHECKING:
-    from tests.fakes import FakeAnilistClient
+from tests.conftest import FakeAnilistClient
 
 
 @pytest.mark.asyncio

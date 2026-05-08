@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import cast
 
+import msgspec
 from anibridge.list import (
     ListEntry,
     ListMedia,
@@ -43,7 +44,9 @@ class AnilistListProvider(ListProvider):
             config (dict | None): Optional configuration options for the provider.
         """
         super().__init__(logger=logger, config=config)
-        self.parsed_config = AnilistListProviderConfig.model_validate(config or {})
+        self.parsed_config = msgspec.convert(
+            config or {}, type=AnilistListProviderConfig
+        )
 
         self._client = AnilistClient(
             anilist_token=self.parsed_config.token,

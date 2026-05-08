@@ -1,15 +1,12 @@
 """AniList Models Module."""
 
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from enum import StrEnum
 from functools import cache
-from typing import Annotated, Any, ClassVar, get_args, get_origin
+from typing import Any, ClassVar, get_args, get_origin
 
-from pydantic import AfterValidator, BaseModel, ConfigDict
-from pydantic.alias_generators import to_camel
-
-UTCDateTime = Annotated[datetime, AfterValidator(lambda dt: dt.astimezone(UTC))]
+import msgspec
 
 
 class AnilistBaseEnum(StrEnum):
@@ -84,29 +81,13 @@ class UserTitleLanguage(AnilistBaseEnum):
     NATIVE_STYLISED = "NATIVE_STYLISED"
 
 
-class AnilistBaseModel(BaseModel):
+class AnilistBaseModel(msgspec.Struct, rename="camel", kw_only=True):
     """Base, abstract class for all AniList models to represent GraphQL objects.
 
     Provides serialization, aliasing, and GraphQL query generation utilities.
     """
 
-    _processed_models: ClassVar[set] = set()
-
-    def model_dump(self, **kwargs) -> dict:
-        """Convert the model to a dictionary, converting all keys to camelCase.
-
-        Returns:
-            dict: Dictionary representation of the model.
-        """
-        return super().model_dump(by_alias=True, **kwargs)
-
-    def model_dump_json(self, **kwargs) -> str:
-        """Serialize the model to JSON, converting all keys to camelCase.
-
-        Returns:
-            str: JSON serialized string of the model.
-        """
-        return super().model_dump_json(by_alias=True, **kwargs)
+    _processed_models: ClassVar[set[str]] = set()
 
     def unset_fields(self, fields: Iterable[str]) -> None:
         """Unset specified fields to their default values.
@@ -114,9 +95,14 @@ class AnilistBaseModel(BaseModel):
         Args:
             fields (Iterable[str]): Field names to unset.
         """
-        for field, field_info in self.__class__.model_fields.items():
-            if field in fields:
-                setattr(self, field, field_info.default)
+        field_set = set(fields)
+        for field_info in msgspec.structs.fields(type(self)):
+            if field_info.name not in field_set:
+                continue
+            if field_info.default_factory is not msgspec.NODEFAULT:
+                setattr(self, field_info.name, field_info.default_factory())
+            elif field_info.default is not msgspec.NODEFAULT:
+                setattr(self, field_info.name, field_info.default)
 
     @classmethod
     @cache
@@ -130,26 +116,18 @@ class AnilistBaseModel(BaseModel):
             return ""
 
         cls._processed_models.add(cls.__name__)
-        fields = cls.model_fields
         graphql_fields = []
 
-        for field_name, field in fields.items():
-            field_type = (
-                get_args(field.annotation)[0]
-                if get_origin(field.annotation)
-                else field.annotation
-            )
-
-            camel_field_name = to_camel(field_name)
-
-            if isinstance(field_type, type) and issubclass(
-                field_type, AnilistBaseModel
-            ):
+        for field_info in msgspec.structs.fields(cls):
+            field_type = _resolve_model_type(field_info.type)
+            if field_type is not None:
                 nested_fields = field_type.model_dump_graphql()
                 if nested_fields:
-                    graphql_fields.append(f"{camel_field_name} {{ {nested_fields} }}")
+                    graphql_fields.append(
+                        f"{field_info.encode_name} {{ {nested_fields} }}"
+                    )
             else:
-                graphql_fields.append(f"{camel_field_name}")
+                graphql_fields.append(f"{field_info.encode_name}")
 
         cls._processed_models.remove(cls.__name__)
         return " ".join(graphql_fields)
@@ -160,13 +138,25 @@ class AnilistBaseModel(BaseModel):
 
     def __repr__(self) -> str:
         """Return string representation of the model."""
-        return f"<{
-            ' : '.join(
-                [f'{k}={v}' for k, v in self.model_dump().items() if v is not None]
-            )
-        }>"
+        values = [
+            f"{k}={v}" for k, v in msgspec.to_builtins(self).items() if v is not None
+        ]
+        return f"<{' : '.join(values)}>"
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+def _resolve_model_type(annotation: Any) -> type[AnilistBaseModel] | None:
+    if isinstance(annotation, type) and issubclass(annotation, AnilistBaseModel):
+        return annotation
+
+    origin = get_origin(annotation)
+    if origin is None:
+        return None
+
+    for arg in get_args(annotation):
+        resolved = _resolve_model_type(arg)
+        if resolved is not None:
+            return resolved
+    return None
 
 
 class MediaListOptions(AnilistBaseModel):
@@ -206,7 +196,7 @@ class MediaTitle(AnilistBaseModel):
         Returns:
             list[str]: All the available titles.
         """
-        return [getattr(self, t) for t in self.__class__.model_fields if t]
+        return [getattr(self, field) for field in self.__struct_fields__ if field]
 
     def best_title(self) -> str:
         """Return the preferred title using AniList's user-preferred fallback."""
@@ -340,25 +330,25 @@ class MediaList(AnilistBaseModel):
     notes: str | None = None
     started_at: FuzzyDate | None = None
     completed_at: FuzzyDate | None = None
-    created_at: UTCDateTime | None = None
-    updated_at: UTCDateTime | None = None
+    created_at: int | None = None
+    updated_at: int | None = None
 
 
-class MediaListGroup[EntryType: MediaList](AnilistBaseModel):
+class MediaListGroup(AnilistBaseModel):
     """Model representing a group of media list entries."""
 
-    entries: list[EntryType] = []
+    entries: list[MediaList] = msgspec.field(default_factory=list)
     name: str | None = None
     is_custom_list: bool | None = None
     is_split_completed_list: bool | None = None
     status: MediaListStatus | None = None
 
 
-class MediaListCollection[GroupType: MediaListGroup](AnilistBaseModel):
+class MediaListCollection(AnilistBaseModel):
     """Model representing a collection of media list groups for a user."""
 
     user: User | None = None
-    lists: list[GroupType] = []
+    lists: list[MediaListGroup] = msgspec.field(default_factory=list)
     has_next_chunk: bool | None = None
 
 
@@ -403,13 +393,13 @@ class MediaListWithMedia(MediaList):
     media: MediaWithoutList | None = None
 
 
-class MediaListGroupWithMedia(MediaListGroup[MediaListWithMedia]):
+class MediaListGroupWithMedia(MediaListGroup):
     """Model representing a group of media list entries with media info."""
 
-    pass
+    entries: list[MediaListWithMedia] = msgspec.field(default_factory=list)
 
 
-class MediaListCollectionWithMedia(MediaListCollection[MediaListGroupWithMedia]):
+class MediaListCollectionWithMedia(MediaListCollection):
     """Model representing a collection of media list groups with media info."""
 
-    pass
+    lists: list[MediaListGroupWithMedia] = msgspec.field(default_factory=list)

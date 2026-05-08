@@ -8,9 +8,10 @@ import time
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import aiohttp
+import msgspec
 from anibridge.utils.cache import TTLDict, ttl_cache
 from anibridge.utils.limiter import Limiter
 from anibridge.utils.types import ProviderLogger
@@ -31,6 +32,16 @@ from anibridge.providers.list.anilist.models import (
 __all__ = ["AnilistClient"]
 
 global_anilist_limiter = Limiter(30 / 60, capacity=4)
+
+
+def _without_none(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            key: _without_none(item) for key, item in value.items() if item is not None
+        }
+    if isinstance(value, list):
+        return [_without_none(item) for item in value]
+    return value
 
 
 class AnilistClient:
@@ -167,8 +178,9 @@ class AnilistClient:
     def _remember(self, media: Media) -> None:
         """Store media in shared caches."""
         # Keep the long-lived TTL cache free of user-specific list state.
-        self._media_cache[media.id] = media.model_copy(
-            update={"media_list_entry": None}
+        self._media_cache[media.id] = msgspec.convert(
+            {**msgspec.to_builtins(media), "mediaListEntry": None},
+            type=Media,
         )
         if media.media_list_entry is None:
             self._list_cache.pop(media.id, None)
@@ -227,7 +239,7 @@ class AnilistClient:
         }}
         """
         response = await self._make_request(query)
-        return User(**response["data"]["Viewer"])
+        return msgspec.convert(response["data"]["Viewer"], type=User)
 
     async def update_anime_entry(self, entry: MediaList) -> None:
         """Updates an anime entry on the authenticated user's list."""
@@ -247,9 +259,15 @@ class AnilistClient:
         }}
         """
         response = await self._make_request(
-            query, entry.model_dump(mode="json", exclude_none=True)
+            query,
+            cast(
+                dict[str, Any],
+                _without_none(msgspec.json.decode(msgspec.json.encode(entry))),
+            ),
         )
-        saved = MediaListWithMedia(**response["data"]["SaveMediaListEntry"])
+        saved = msgspec.convert(
+            response["data"]["SaveMediaListEntry"], type=MediaListWithMedia
+        )
         self._list_cache[entry.media_id] = self._to_media(saved)
         self._media_cache.pop(entry.media_id, None)
         self._invalidate_cached_views(clear_list_collection_cache=False)
@@ -267,9 +285,11 @@ class AnilistClient:
             }
         }
         """
-        variables = MediaList(
-            id=entry_id, media_id=media_id, user_id=self.user.id
-        ).model_dump(mode="json", exclude_none=True)
+        variables = MediaList(id=entry_id, media_id=media_id, user_id=self.user.id)
+        variables = cast(
+            dict[str, Any],
+            _without_none(msgspec.json.decode(msgspec.json.encode(variables))),
+        )
 
         response = await self._make_request(query, variables)
         self._list_cache.pop(media_id, None)
@@ -319,7 +339,11 @@ class AnilistClient:
                         startedAt: $startedAt{j}, completedAt: $completedAt{j}
                     ) {{ {MediaListWithMedia.model_dump_graphql()} }}
                 """)
-                for k, v in json.loads(e.model_dump_json(exclude_none=True)).items():
+                encoded_entry = cast(
+                    dict[str, Any],
+                    _without_none(msgspec.json.decode(msgspec.json.encode(e))),
+                )
+                for k, v in encoded_entry.items():
                     variables[f"{k}{j}"] = v
 
             query = f"""
@@ -345,7 +369,9 @@ class AnilistClient:
                 if not data or "mediaId" not in data:
                     continue
                 mid = data["mediaId"]
-                self._list_cache[mid] = self._to_media(MediaListWithMedia(**data))
+                self._list_cache[mid] = self._to_media(
+                    msgspec.convert(data, type=MediaListWithMedia)
+                )
                 batch_ok.add(mid)
 
             updated.update(batch_ok)
@@ -430,7 +456,9 @@ class AnilistClient:
         response = await self._make_request(
             query, {"search": search_str, "formats": formats, "limit": limit}
         )
-        return [Media(**m) for m in response["data"]["Page"]["media"]]
+        return [
+            msgspec.convert(m, type=Media) for m in response["data"]["Page"]["media"]
+        ]
 
     async def get_anime(self, anilist_id: int) -> Media:
         """Retrieves detailed information about a specific anime.
@@ -482,7 +510,7 @@ class AnilistClient:
             f"Pulling AniList data from API $${{anilist_id: {anilist_id}}}$$"
         )
         response = await self._make_request(query, {"id": anilist_id})
-        result = Media(**response["data"]["Media"])
+        result = msgspec.convert(response["data"]["Media"], type=Media)
         self._remember(result)
         return result
 
@@ -513,7 +541,7 @@ class AnilistClient:
                 continue
 
             for raw in response.get("data", {}).get("Page", {}).get("media", []) or []:
-                media = Media(**raw)
+                media = msgspec.convert(raw, type=Media)
                 fetched[media.id] = media
                 self._remember(media)
 
@@ -548,8 +576,9 @@ class AnilistClient:
             response = await self._make_request(query, variables)
             if refresh_epoch != self._cache_epoch:
                 raise asyncio.CancelledError
-            chunk = MediaListCollectionWithMedia(
-                **response["data"]["MediaListCollection"]
+            chunk = msgspec.convert(
+                response["data"]["MediaListCollection"],
+                type=MediaListCollectionWithMedia,
             )
             has_next_chunk = bool(chunk.has_next_chunk)
             variables["chunk"] += 1
@@ -596,14 +625,14 @@ class AnilistClient:
             for status, entries in groups.items()
         ]
 
-        return MediaListCollection(
-            user=self.user, lists=sanitized, has_next_chunk=False
-        ).model_dump_json()
+        return msgspec.json.encode(
+            MediaListCollection(user=self.user, lists=sanitized, has_next_chunk=False)
+        ).decode()
 
     async def restore_anilist(self, backup: str) -> None:
         """Restores the user's AniList data from a JSON backup."""
         json_data = json.loads(backup)
-        data = MediaListCollection(**json_data)
+        data = msgspec.convert(json_data, type=MediaListCollection)
         restored_entries = [entry for li in data.lists for entry in li.entries]
         restored_media_ids = {entry.media_id for entry in restored_entries}
 
@@ -624,19 +653,17 @@ class AnilistClient:
     @staticmethod
     def _to_media(entry: MediaListWithMedia) -> Media:
         """Converts a MediaListWithMedia object to a Media object."""
-        return Media(
-            media_list_entry=MediaList(
-                **{
-                    field: getattr(entry, field)
-                    for field in MediaList.model_fields
-                    if hasattr(entry, field)
-                }
-            ),
-            **{
-                field: getattr(entry.media, field)
-                for field in Media.model_fields
-                if hasattr(entry.media, field)
+        entry_payload = dict(msgspec.to_builtins(entry))
+        media_payload = entry_payload.pop("media")
+        if media_payload is None:
+            raise ValueError("AniList entry is missing media payload")
+
+        return msgspec.convert(
+            {
+                **media_payload,
+                "mediaListEntry": entry_payload,
             },
+            type=Media,
         )
 
     async def _make_request(self, query: str, variables: dict | None = None) -> dict:

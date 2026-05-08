@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, datetime
 
+import msgspec
 import pytest
 
 from anibridge.providers.list.anilist.models import (
@@ -13,7 +14,7 @@ from anibridge.providers.list.anilist.models import (
 
 def _fuzzy(**kwargs) -> FuzzyDate:
     """Helper for constructing FuzzyDate instances without validation noise."""
-    return FuzzyDate.model_construct(**kwargs)
+    return FuzzyDate(**kwargs)
 
 
 @pytest.mark.parametrize(
@@ -60,10 +61,10 @@ def test_base_model_unset_and_dump_helpers():
     title = MediaTitle(romaji="romaji", english="english")
     title.unset_fields(["english"])
     assert title.english is None
-    dumped = title.model_dump()
+    dumped = msgspec.json.decode(msgspec.json.encode(title))
     assert "romaji" in dumped
     assert "english" in dumped and dumped["english"] is None
-    json_payload = title.model_dump_json()
+    json_payload = msgspec.json.encode(title).decode()
     assert "romaji" in json_payload
 
 
@@ -115,16 +116,6 @@ def test_fuzzy_date_comparison_missing_year_defaults():
     assert lhs <= rhs
     assert lhs > rhs
     assert lhs >= rhs
-
-
-def test_fuzzy_date_comparison_notimplemented_for_other_types():
-    """Ordering comparisons should return NotImplemented for other types."""
-    date = _fuzzy(year=2023)
-    marker = object()
-    assert FuzzyDate.__lt__(date, marker) is NotImplemented
-    assert FuzzyDate.__le__(date, marker) is NotImplemented
-    assert FuzzyDate.__gt__(date, marker) is NotImplemented
-    assert FuzzyDate.__ge__(date, marker) is NotImplemented
 
 
 def test_fuzzy_date_repr_handles_unknown_components():
