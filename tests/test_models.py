@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 import msgspec
 import pytest
 
-from anibridge.providers.list.anilist.models import (
+from anibridge.providers.anilist.models import (
     FuzzyDate,
     MediaListWithMedia,
     MediaTitle,
@@ -21,18 +21,9 @@ def _fuzzy(**kwargs) -> FuzzyDate:
     "value",
     [date(2023, 5, 20), datetime(2023, 5, 20, tzinfo=UTC)],
 )
-def test_fuzzy_date_conversion_roundtrip(value):
-    """FuzzyDate.from_date should preserve year/month/day information."""
-    fuzzy = FuzzyDate.from_date(value)
-    assert bool(fuzzy)
-    assert fuzzy.year == 2023
-    assert fuzzy.month == 5
-    assert fuzzy.day == 20
-    assert fuzzy.to_datetime() == datetime(2023, 5, 20)
-
-
-def test_fuzzy_date_comparison_handles_missing_fields():
+def test_fuzzy_date_comparison_handles_missing_fields(value: date | datetime):
     """Ordering should treat incomplete dates as lower precision values."""
+    assert FuzzyDate.from_date(value) == _fuzzy(year=2023, month=5, day=20)
     incomplete = _fuzzy(year=2023)
     precise = _fuzzy(year=2023, month=6, day=1)
     assert incomplete < precise
@@ -43,12 +34,6 @@ def test_fuzzy_date_boolean_false_without_year():
     """Fuzzy dates without a year should evaluate to False in boolean context."""
     fuzzy = _fuzzy(month=5, day=12)
     assert not fuzzy
-
-
-def test_fuzzy_date_to_datetime_defaults_month_and_day():
-    """to_datetime should default missing components to the first of the month."""
-    fuzzy = _fuzzy(year=2024)
-    assert fuzzy.to_datetime() == datetime(2024, 1, 1)
 
 
 def test_fuzzy_date_from_date_handles_none():
@@ -96,11 +81,6 @@ def test_media_title_titles_and_string_fallbacks():
     titles = title.titles()
     assert titles[0] == "romaji"
     assert str(title) == "romaji"
-
-
-def test_fuzzy_date_to_datetime_without_year():
-    """FuzzyDate with no year should return None when converted to datetime."""
-    assert _fuzzy(month=5).to_datetime() is None
 
 
 def test_fuzzy_date_equality_with_other_type():

@@ -1,18 +1,14 @@
 """Common pytest fixtures for the AniList provider test-suite."""
 
-import logging
 from collections.abc import AsyncIterator, Callable, Generator
 from dataclasses import dataclass, field
 from datetime import UTC
-from typing import cast
 
 import pytest
 from anibridge.utils.limiter import Limiter
-from anibridge.utils.types import ProviderLogger
 
-from anibridge.providers.list.anilist.client import AnilistClient
-from anibridge.providers.list.anilist.list import AnilistListEntry, AnilistListProvider
-from anibridge.providers.list.anilist.models import (
+from anibridge.providers.anilist.client import AnilistClient
+from anibridge.providers.anilist.models import (
     Media,
     MediaCoverImage,
     MediaFormat,
@@ -154,29 +150,6 @@ def fake_client(sample_media: Media, second_media: Media) -> FakeAnilistClient:
     )
     client.search_results = [sample_media, second_media]
     return client
-
-
-@pytest.fixture()
-def provider(fake_client: FakeAnilistClient) -> AnilistListProvider:
-    """Return an AnilistListProvider wired to the fake client."""
-    provider = AnilistListProvider(
-        logger=cast(ProviderLogger, logging.getLogger("tests.provider")),
-        config={"token": "fake-token", "profile_name": "pytest"},
-    )
-    provider._client = cast(AnilistClient, fake_client)
-    provider._score_format = ScoreFormat.POINT_10_DECIMAL
-    return provider
-
-
-@pytest.fixture()
-def entry_factory(provider: AnilistListProvider) -> Callable[[Media], AnilistListEntry]:
-    """Return a helper that wraps media objects in AnilistListEntry instances."""
-
-    def _build(media: Media) -> AnilistListEntry:
-        assert media.media_list_entry is not None
-        return AnilistListEntry(provider, media=media, entry=media.media_list_entry)
-
-    return _build
 
 
 @pytest.fixture(autouse=True)

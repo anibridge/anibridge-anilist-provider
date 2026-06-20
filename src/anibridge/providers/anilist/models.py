@@ -1,4 +1,4 @@
-"""AniList Models Module."""
+"""AniList GraphQL models."""
 
 from collections.abc import Iterable
 from datetime import date, datetime
@@ -90,11 +90,7 @@ class AnilistBaseModel(msgspec.Struct, rename="camel", kw_only=True):
     _processed_models: ClassVar[set[str]] = set()
 
     def unset_fields(self, fields: Iterable[str]) -> None:
-        """Unset specified fields to their default values.
-
-        Args:
-            fields (Iterable[str]): Field names to unset.
-        """
+        """Unset specified fields to their default values."""
         field_set = set(fields)
         for field_info in msgspec.structs.fields(type(self)):
             if field_info.name not in field_set:
@@ -107,11 +103,7 @@ class AnilistBaseModel(msgspec.Struct, rename="camel", kw_only=True):
     @classmethod
     @cache
     def model_dump_graphql(cls) -> str:
-        """Generate GraphQL query fields for this model.
-
-        Returns:
-            str: The GraphQL query fields.
-        """
+        """Generate GraphQL query fields for this model."""
         if cls.__name__ in cls._processed_models:
             return ""
 
@@ -191,11 +183,7 @@ class MediaTitle(AnilistBaseModel):
     user_preferred: str | None = None
 
     def titles(self) -> list[str]:
-        """Return a list of all the available titles.
-
-        Returns:
-            list[str]: All the available titles.
-        """
+        """Return a list of all the available titles."""
         return [getattr(self, field) for field in self.__struct_fields__ if field]
 
     def best_title(self) -> str:
@@ -203,11 +191,7 @@ class MediaTitle(AnilistBaseModel):
         return self.user_preferred or self.romaji or self.english or self.native or ""
 
     def __str__(self) -> str:
-        """Return the first available title or an empty string.
-
-        Returns:
-            str: A title or an empty string.
-        """
+        """Return the first available title or an empty string."""
         return self.user_preferred or self.english or self.romaji or self.native or ""
 
 
@@ -220,27 +204,18 @@ class FuzzyDate(AnilistBaseModel):
 
     @staticmethod
     def from_date(d: date | datetime | None) -> FuzzyDate | None:
-        """Create a FuzzyDate from a date or datetime object.
-
-        Args:
-            d (date | datetime | None): A date or datetime object.
-
-        Returns:
-            FuzzyDate | None: An equivalent FuzzyDate object or None.
-        """
+        """Create a FuzzyDate from a date or datetime object."""
         if d is None:
             return None
         return FuzzyDate(year=d.year, month=d.month, day=d.day)
 
-    def to_datetime(self) -> datetime | None:
-        """Convert the FuzzyDate to a datetime object.
-
-        Returns:
-            datetime | None: A datetime object or None if the FuzzyDate is incomplete.
-        """
-        if not self.year:
+    def to_date(self) -> date | None:
+        """Convert the FuzzyDate to a date object, filling defaults."""
+        if self.year is None:
             return None
-        return datetime(year=self.year, month=self.month or 1, day=self.day or 1)
+        month = self.month if self.month is not None else 1
+        day = self.day if self.day is not None else 1
+        return date(year=self.year, month=month, day=day)
 
     def __bool__(self) -> bool:
         """Return True if the date has a year, else False."""

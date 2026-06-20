@@ -8,15 +8,15 @@ import time
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
+from logging import Logger
 from typing import Any, ClassVar, cast
 
 import aiohttp
 import msgspec
 from anibridge.utils.cache import TTLDict, ttl_cache
 from anibridge.utils.limiter import Limiter
-from anibridge.utils.types import ProviderLogger
 
-from anibridge.providers.list.anilist.models import (
+from anibridge.providers.anilist.models import (
     Media,
     MediaFormat,
     MediaList,
@@ -30,6 +30,8 @@ from anibridge.providers.list.anilist.models import (
 )
 
 __all__ = ["AnilistClient"]
+
+_ANILIST_PACKAGE_NAME = "anibridge-anilist-provider"
 
 global_anilist_limiter = Limiter(30 / 60, capacity=4)
 
@@ -53,22 +55,17 @@ class AnilistClient:
     """
 
     API_URL: ClassVar[str] = "https://graphql.anilist.co"
+    _BATCH_SIZE: ClassVar[int] = 10
     _LIST_REFRESH_DEBOUNCE_SECONDS: ClassVar[float] = 60.0
     _LIST_REFRESH_MAX_STALENESS_SECONDS: ClassVar[float] = 1800.0
 
     def __init__(
         self,
         anilist_token: str,
-        logger: ProviderLogger,
+        logger: Logger,
         rate_limit: int | None = None,
     ) -> None:
-        """Initialize the AniList client.
-
-        Args:
-            anilist_token (str): Authentication token for AniList API.
-            rate_limit (int | None): The maximum number of API requests per minute.
-            logger (ProviderLogger): Injected provider logger.
-        """
+        """Initialize the AniList client."""
         self.anilist_token = anilist_token
         self.rate_limit = rate_limit
         self.log = logger
@@ -103,14 +100,11 @@ class AnilistClient:
             headers = {
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "User-Agent": "anibridge-anilist-provider/"
-                + importlib.metadata.version("anibridge-anilist-provider"),
+                "User-Agent": self._user_agent(),
             }
             if self.anilist_token:
                 headers["Authorization"] = f"Bearer {self.anilist_token}"
-
             self._session = aiohttp.ClientSession(headers=headers)
-
         return self._session
 
     async def close(self):
@@ -133,13 +127,7 @@ class AnilistClient:
     def _invalidate_cached_views(
         self, *, clear_list_collection_cache: bool = True
     ) -> None:
-        """Invalidate derived cached views after list-state changes.
-
-        Args:
-            clear_list_collection_cache: Whether to clear the cached
-                `_fetch_list_collection` result. Mutations can skip this because
-                they already update the in-memory list cache directly.
-        """
+        """Invalidate derived cached views after list-state changes."""
         self._cache_epoch += 1
         if (task := self._bg_task) and not task.done():
             task.cancel()
@@ -149,6 +137,14 @@ class AnilistClient:
                 self._fetch_list_collection.cache_clear()
         with contextlib.suppress(AttributeError):
             self._search_anime.cache_clear()
+
+    @staticmethod
+    def _user_agent() -> str:
+        """Return the package-specific AniList user agent."""
+        return (
+            f"{_ANILIST_PACKAGE_NAME}/"
+            f"{importlib.metadata.version(_ANILIST_PACKAGE_NAME)}"
+        )
 
     async def initialize(self):
         """Initialize the client by getting user info and prefetching entries."""
@@ -170,10 +166,7 @@ class AnilistClient:
 
     def _cached(self, anilist_id: int) -> Media | None:
         """Return media from user-list cache or general TTL cache."""
-        hit = self._list_cache.get(anilist_id) or self._media_cache.get(anilist_id)
-        if hit:
-            self.log.debug(f"Cache hit $${{anilist_id: {anilist_id}}}$$")
-        return hit
+        return self._list_cache.get(anilist_id) or self._media_cache.get(anilist_id)
 
     def _remember(self, media: Media) -> None:
         """Store media in shared caches."""
@@ -304,11 +297,10 @@ class AnilistClient:
         Sends a batch mutation to modify multiple existing anime entries in the user's
         list. Processes entries in batches of 10 to avoid overwhelming the API.
         """
-        BATCH_SIZE = 10
         if not entries:
             return set()
 
-        _FIELDS = [
+        fields = [
             ("mediaId", "Int"),
             ("status", "MediaListStatus"),
             ("score", "Float"),
@@ -321,17 +313,17 @@ class AnilistClient:
 
         updated: set[int] = set()
 
-        for i in range(0, len(entries), BATCH_SIZE):
-            batch = entries[i : i + BATCH_SIZE]
+        for i in range(0, len(entries), self._BATCH_SIZE):
+            batch = entries[i : i + self._BATCH_SIZE]
             self.log.debug(
-                f"Updating batch of anime entries "
-                f"$${{anilist_id: {[m.media_id for m in batch]}}}$$"
+                "Updating batch of anime entries $${anilist_id: %s}$$",
+                [m.media_id for m in batch],
             )
             by_id = {e.media_id: e for e in batch}
 
             var_decls, mutations, variables = [], [], {}
             for j, e in enumerate(batch):
-                var_decls.extend(f"${f}{j}: {t}" for f, t in _FIELDS)
+                var_decls.extend(f"${f}{j}: {t}" for f, t in fields)
                 mutations.append(f"""
                     m{j}: SaveMediaListEntry(
                         mediaId: $mediaId{j}, status: $status{j}, score: $score{j},
@@ -409,8 +401,11 @@ class AnilistClient:
         """Search for anime on AniList with filtering capabilities."""
         kind = "all" if is_movie is None else ("movie" if is_movie else "show")
         self.log.debug(
-            f"Searching for {kind} with title $$'{search_str}'$$ that is "
-            f"releasing and has {episodes or 'unknown'} episodes"
+            "Searching for %s with title $$'%s'$$ that is releasing and has "
+            "%s episodes",
+            kind,
+            search_str,
+            episodes or "unknown",
         )
         for m in await self._search_anime(search_str, is_movie, limit):
             if (
@@ -484,8 +479,9 @@ class AnilistClient:
         cached_ids = [mid for mid in anilist_ids if mid in self._list_cache]
         if cached_ids:
             self.log.debug(
-                f"Pulling AniList data from local cache in "
-                f"batched mode $${{anilist_ids: {cached_ids}}}$$"
+                "Pulling AniList data from local cache in batched mode "
+                "$${anilist_ids: %s}$$",
+                cached_ids,
             )
 
         missing = [mid for mid in anilist_ids if self._cached(mid) is None]
@@ -507,7 +503,8 @@ class AnilistClient:
         }}
         """
         self.log.debug(
-            f"Pulling AniList data from API $${{anilist_id: {anilist_id}}}$$"
+            "Pulling AniList data from API $${anilist_id: %s}$$",
+            anilist_id,
         )
         response = await self._make_request(query, {"id": anilist_id})
         result = msgspec.convert(response["data"]["Media"], type=Media)
@@ -516,14 +513,14 @@ class AnilistClient:
 
     async def _batch_fetch_anime(self, anilist_ids: list[int]) -> dict[int, Media]:
         """Fetch media from AniList in batches for IDs missing in local list cache."""
-        BATCH_SIZE = 50
+        batch_size = 50
         fetched: dict[int, Media] = {}
 
-        for i in range(0, len(anilist_ids), BATCH_SIZE):
-            batch = anilist_ids[i : i + BATCH_SIZE]
+        for i in range(0, len(anilist_ids), batch_size):
+            batch = anilist_ids[i : i + batch_size]
             self.log.debug(
-                f"Pulling AniList data from API in batched "
-                f"mode $${{anilist_ids: {batch}}}$$"
+                "Pulling AniList data from API in batched mode $${anilist_ids: %s}$$",
+                batch,
             )
             query = f"""
             query BatchGetAnime($ids: [Int]) {{

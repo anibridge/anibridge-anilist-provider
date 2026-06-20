@@ -7,7 +7,7 @@ _This provider comes built-in with AniBridge, so you don't need to install it se
 ## Configuration
 
 ```yaml
-list_provider_config:
+target_provider_config:
   anilist:
     token: ...
     # rate_limit: null

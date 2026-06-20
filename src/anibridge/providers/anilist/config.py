@@ -5,8 +5,8 @@ from typing import Annotated
 import msgspec
 
 
-class AnilistListProviderConfig(msgspec.Struct, kw_only=True):
-    """Configuration for the AniList list provider."""
+class AnilistProviderConfig(msgspec.Struct, kw_only=True):
+    """Configuration for the AniList provider."""
 
     token: Annotated[
         str,

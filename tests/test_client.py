@@ -2,18 +2,17 @@
 
 import asyncio
 import json
-import logging
 from collections.abc import Callable
 from datetime import timedelta
+from logging import getLogger
 from typing import Any, cast
 
 import aiohttp
 import msgspec
 import pytest
-from anibridge.utils.types import ProviderLogger
 
-from anibridge.providers.list.anilist.client import AnilistClient
-from anibridge.providers.list.anilist.models import (
+from anibridge.providers.anilist.client import AnilistClient
+from anibridge.providers.anilist.models import (
     Media,
     MediaFormat,
     MediaList,
@@ -36,7 +35,7 @@ def client() -> AnilistClient:
     """Return a fresh AnilistClient instance backed by the stubbed token."""
     return AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
 
 
@@ -44,11 +43,11 @@ def test_default_rate_limiter_is_shared_across_clients() -> None:
     """Clients without a custom limit should reuse one global limiter."""
     first = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
     second = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
 
     assert first.rate_limit is None
@@ -60,12 +59,12 @@ def test_custom_rate_limiter_is_local_per_client() -> None:
     """Custom limits should create per-client limiters and convert to req/sec."""
     first = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
         rate_limit=120,
     )
     second = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
         rate_limit=120,
     )
 
@@ -91,13 +90,13 @@ async def test_get_session_creates_and_reuses_client_session(
             self.closed = True
 
     monkeypatch.setattr(
-        "anibridge.providers.list.anilist.client.aiohttp.ClientSession",
+        "anibridge.providers.anilist.client.aiohttp.ClientSession",
         lambda *, headers: DummySession(headers=headers),
     )
 
     stub_client = AnilistClient(
         anilist_token="abc",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
 
     session_one = await stub_client._get_session()
@@ -126,7 +125,7 @@ async def test_close_ignores_already_closed_session():
 
     stub_client = AnilistClient(
         anilist_token="abc",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
     stub_client._session = cast(aiohttp.ClientSession, DummySession())
 
@@ -284,9 +283,9 @@ async def test_search_anime_filters_episode_and_status(
 
     client._search_anime = fake_search  # ty:ignore[invalid-assignment]
 
-    results: list[Media] = []
-    async for media in client.search_anime("foo", is_movie=None, episodes=24):
-        results.append(media)
+    results = [
+        media async for media in client.search_anime("foo", is_movie=None, episodes=24)
+    ]
 
     assert results == [releasing, finished_matching]
 
@@ -741,7 +740,7 @@ async def test_make_request_retries_on_rate_limit(
     )
     client = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
 
     async def fake_get_session() -> _FakeSession:
@@ -777,7 +776,7 @@ async def test_make_request_raises_after_rate_limit_retries_exhausted(
     )
     client = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
 
     async def fake_get_session() -> _FakeSession:
@@ -810,7 +809,7 @@ async def test_make_request_recovers_from_client_error(monkeypatch: pytest.Monke
     )
     client = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
 
     async def fake_get_session() -> _FakeSession:
@@ -835,7 +834,7 @@ async def test_make_request_raises_after_three_failures(
     session = _FakeSession([cast(object, aiohttp.ClientConnectionError("boom"))] * 4)
     client = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
 
     async def fake_get_session() -> _FakeSession:
@@ -859,7 +858,7 @@ async def test_make_request_fails_fast_on_unauthorized(
     session = _FakeSession([_ResponseContext(401), _ResponseContext(200)])
     client = AnilistClient(
         anilist_token="token",
-        logger=cast(ProviderLogger, logging.getLogger("tests.client")),
+        logger=getLogger("tests.client"),
     )
 
     async def fake_get_session() -> _FakeSession:
@@ -982,7 +981,7 @@ async def test_batch_get_anime_mixed_cache_uses_network(
 
     results = await client.batch_get_anime([cached.id, missing.id])
 
-    assert set(media.id for media in results) == {cached.id, missing.id}
+    assert {media.id for media in results} == {cached.id, missing.id}
     assert missing.id in client._list_cache
 
 
