@@ -32,6 +32,7 @@ from anibridge.provider.base import (
     RecordQuery,
     RecordSpec,
     RecordWrite,
+    RecordWriteOp,
     Ref,
     Role,
     State,
@@ -48,7 +49,6 @@ from anibridge.provider.base import (
     UpsertRecord,
     Value,
     WriteError,
-    WriteOp,
     WriteResult,
 )
 
@@ -196,7 +196,7 @@ class AnilistProvider(
                             constraints=(TextConstraint(max_length=1000),),
                         ),
                     },
-                    write_ops=frozenset({WriteOp.UPSERT_RECORD, WriteOp.DELETE_RECORD}),
+                    write_ops=frozenset({RecordWriteOp.UPSERT, RecordWriteOp.DELETE}),
                 ),
             ),
             external_authorities=frozenset({"anilist"}),
@@ -321,9 +321,9 @@ class AnilistProvider(
                     result = await self._delete_record(write)
             except Exception as exc:
                 op = (
-                    WriteOp.DELETE_RECORD
+                    RecordWriteOp.DELETE
                     if isinstance(write, DeleteRecord)
-                    else WriteOp.UPSERT_RECORD
+                    else RecordWriteOp.UPSERT
                 )
                 result = WriteResult(
                     ok=False,
@@ -426,7 +426,7 @@ class AnilistProvider(
         if not changed_fields:
             return WriteResult(
                 ok=True,
-                op=WriteOp.UPSERT_RECORD,
+                op=RecordWriteOp.UPSERT,
                 token=write.token,
                 ref=ref,
             )
@@ -439,7 +439,7 @@ class AnilistProvider(
         self._client._mark_list_cache_dirty()
         return WriteResult(
             ok=True,
-            op=WriteOp.UPSERT_RECORD,
+            op=RecordWriteOp.UPSERT,
             token=write.token,
             key=str(saved.id),
             ref=Ref.anchor(str(saved.media_id)),
@@ -452,7 +452,7 @@ class AnilistProvider(
         if ref is None:
             return WriteResult(
                 ok=False,
-                op=WriteOp.DELETE_RECORD,
+                op=RecordWriteOp.DELETE,
                 token=write.token,
                 code=WriteError.INVALID,
                 error="AniList delete requires a ref",
@@ -462,14 +462,14 @@ class AnilistProvider(
         if entry is None:
             return WriteResult(
                 ok=True,
-                op=WriteOp.DELETE_RECORD,
+                op=RecordWriteOp.DELETE,
                 token=write.token,
                 ref=ref,
             )
         deleted = await self._client.delete_anime_entry(entry.id, entry.media_id)
         return WriteResult(
             ok=bool(deleted),
-            op=WriteOp.DELETE_RECORD,
+            op=RecordWriteOp.DELETE,
             token=write.token,
             ref=ref,
             key=str(entry.id),
