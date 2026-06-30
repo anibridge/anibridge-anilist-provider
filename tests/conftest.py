@@ -15,6 +15,7 @@ from anibridge.providers.anilist.models import (
     MediaList,
     MediaListOptions,
     MediaListStatus,
+    MediaListWithMedia,
     MediaStatus,
     MediaTitle,
     ScoreFormat,
@@ -39,6 +40,7 @@ class FakeAnilistClient:
             ),
         )
         self._list_cache: dict[int, Media] = {}
+        self._media_cache: dict[int, Media] = {}
         self.update_payloads: list[MediaList] = []
         self.batch_update_payloads: list[list[MediaList]] = []
         self.deleted_entries: list[tuple[int, int]] = []
@@ -88,6 +90,20 @@ class FakeAnilistClient:
 
     async def close(self) -> None:
         """No-op close method."""
+        return None
+
+    def _to_media(self, entry: MediaListWithMedia) -> Media:
+        """Convert a saved list entry into the cached Media shape."""
+        media = self.medias[entry.media_id]
+        media.media_list_entry = entry
+        return media
+
+    def _invalidate_cached_views(self, *, clear_list_collection_cache: bool) -> None:
+        """No-op cache invalidation hook."""
+        return None
+
+    def _mark_list_cache_dirty(self) -> None:
+        """No-op list cache dirtiness hook."""
         return None
 
     def clear_cache(self) -> None:

@@ -11,12 +11,14 @@ from anibridge.provider.base import (
     NodeKind,
     NodeQuery,
     RecordField,
+    RecordQuery,
     Ref,
     SupportsNodeReads,
+    UpsertRecord,
 )
 
 from anibridge.providers.anilist.client import AnilistClient
-from anibridge.providers.anilist.models import FuzzyDate
+from anibridge.providers.anilist.models import FuzzyDate, MediaListWithMedia
 from anibridge.providers.anilist.provider import AnilistProvider
 
 
@@ -69,6 +71,45 @@ async def test_fetch_nodes_returns_anilist_metadata(provider: AnilistProvider) -
     artwork = node.facets[FacetName.ARTWORK]
     assert isinstance(artwork, Artwork)
     assert artwork.poster == "m.jpg"
+
+
+@pytest.mark.asyncio
+async def test_fetch_records_fetches_uncached_media(provider: AnilistProvider) -> None:
+    """Record reads should fall back to targeted media fetches on cache misses."""
+    page = await provider.fetch_records(RecordQuery(refs=(Ref.anchor("101"),)))
+
+    assert len(page.items) == 1
+    assert page.items[0].ref == Ref.anchor("101")
+    assert page.items[0].surface == "media_list"
+
+
+@pytest.mark.asyncio
+async def test_upsert_record_returns_write_ref(
+    provider: AnilistProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AniList write results should preserve the requested contract ref."""
+
+    async def save_entry(_variables: dict[str, Any]) -> MediaListWithMedia:
+        return MediaListWithMedia(
+            id=2020,
+            user_id=1,
+            media_id=202,
+            progress=4,
+            updated_at=123,
+        )
+
+    monkeypatch.setattr(provider, "_save_media_list_entry", save_entry)
+    write = UpsertRecord(
+        ref=Ref.anchor("202"),
+        surface="media_list",
+        set={RecordField.PROGRESS: 4},
+    )
+
+    result = await provider._upsert_record(write)
+
+    assert result.ok is True
+    assert result.ref == write.ref
 
 
 def test_record_from_media_preserves_anilist_date_precision(

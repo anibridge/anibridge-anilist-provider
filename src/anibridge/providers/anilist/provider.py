@@ -300,9 +300,7 @@ class AnilistProvider(
                 self.log.warning("Invalid AniList media ref %s", ref.key)
                 continue
 
-            media = self._client._list_cache.get(media_id)
-            if media is None:
-                continue
+            media = await self._client.get_anime(media_id)
 
             records.append(self._record_from_media(media, query.fields))
         return Page(items=tuple(records))
@@ -442,7 +440,7 @@ class AnilistProvider(
             op=RecordWriteOp.UPSERT,
             token=write.token,
             key=str(saved.id),
-            ref=Ref.anchor(str(saved.media_id)),
+            ref=write.ref,
             revision=str(saved.updated_at) if saved.updated_at is not None else None,
         )
 
