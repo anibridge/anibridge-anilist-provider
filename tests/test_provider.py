@@ -8,12 +8,16 @@ import pytest
 from anibridge.provider.base import (
     Artwork,
     FacetName,
+    Node,
     NodeKind,
     NodeQuery,
+    NodeSpec,
+    Record,
     RecordField,
     RecordQuery,
     Ref,
-    SupportsNodeReads,
+    ResourceKind,
+    SupportsReads,
     UpsertRecord,
 )
 
@@ -37,16 +41,20 @@ def test_capabilities_advertise_node_reads(provider: AnilistProvider) -> None:
     """AniList should expose targeted node metadata for web timeline enrichment."""
     capabilities = provider.capabilities()
 
-    assert isinstance(provider, SupportsNodeReads)
+    assert isinstance(provider, SupportsReads)
     assert FacetName.ARTWORK in capabilities.facets
-    assert capabilities.nodes[0].kind.native == "anime"
-    assert capabilities.nodes[0].kind.semantic == NodeKind.SERIES
+    node_spec = next(
+        spec for spec in capabilities.specs if spec.resource is ResourceKind.NODE
+    )
+    node_spec = cast(NodeSpec, node_spec)
+    assert node_spec.kind.native == "anime"
+    assert node_spec.kind.semantic == NodeKind.SERIES
 
 
 @pytest.mark.asyncio
 async def test_fetch_nodes_returns_anilist_metadata(provider: AnilistProvider) -> None:
     """Node reads should resolve titles, links, labels, and requested artwork."""
-    page = await provider.fetch_nodes(
+    page = await provider.fetch(
         NodeQuery(
             refs=(Ref.anchor("bad-ref"),),
         )
@@ -54,7 +62,7 @@ async def test_fetch_nodes_returns_anilist_metadata(provider: AnilistProvider) -
 
     assert page.items == ()
 
-    page = await provider.fetch_nodes(
+    page = await provider.fetch(
         NodeQuery(
             refs=(Ref.anchor("101"),),
             facets=frozenset({FacetName.ARTWORK}),
@@ -62,7 +70,7 @@ async def test_fetch_nodes_returns_anilist_metadata(provider: AnilistProvider) -
     )
 
     assert len(page.items) == 1
-    node = page.items[0]
+    node = cast(Node, page.items[0])
     assert node.ref == Ref.anchor("101")
     assert node.kind == "anime"
     assert node.title == "cowboy bebop"
@@ -76,11 +84,12 @@ async def test_fetch_nodes_returns_anilist_metadata(provider: AnilistProvider) -
 @pytest.mark.asyncio
 async def test_fetch_records_fetches_uncached_media(provider: AnilistProvider) -> None:
     """Record reads should fall back to targeted media fetches on cache misses."""
-    page = await provider.fetch_records(RecordQuery(refs=(Ref.anchor("101"),)))
+    page = await provider.fetch(RecordQuery(refs=(Ref.anchor("101"),)))
 
     assert len(page.items) == 1
-    assert page.items[0].ref == Ref.anchor("101")
-    assert page.items[0].surface == "media_list"
+    record = cast(Record, page.items[0])
+    assert record.ref == Ref.anchor("101")
+    assert record.surface == "media_list"
 
 
 @pytest.mark.asyncio

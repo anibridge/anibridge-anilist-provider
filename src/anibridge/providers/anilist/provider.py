@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 import msgspec
@@ -11,8 +11,9 @@ from anibridge.provider.base import (
     Artwork,
     BackupArtifact,
     Capabilities,
-    DeleteRecord,
+    Delete,
     Descriptor,
+    Event,
     ExternalId,
     FacetName,
     FieldSpec,
@@ -26,28 +27,29 @@ from anibridge.provider.base import (
     Progress,
     ProgressConstraint,
     Provider,
+    Query,
     Rating,
     Record,
     RecordField,
     RecordQuery,
     RecordSpec,
-    RecordWrite,
-    RecordWriteOp,
     Ref,
+    ResourceKind,
     Role,
     State,
     Status,
     SupportsBackupExports,
     SupportsMapping,
-    SupportsNodeReads,
     SupportsNodeSearch,
-    SupportsRecordReads,
-    SupportsRecordWrites,
+    SupportsReads,
+    SupportsWrites,
     TemporalConstraint,
     TemporalPrecision,
     TextConstraint,
     UpsertRecord,
     Value,
+    Write,
+    WriteAction,
     WriteError,
     WriteResult,
 )
@@ -82,10 +84,9 @@ _NATIVE_TO_STATUS: dict[MediaListStatus, Status] = {
 class AnilistProvider(
     Provider,
     SupportsMapping,
-    SupportsNodeReads,
     SupportsNodeSearch,
-    SupportsRecordReads,
-    SupportsRecordWrites,
+    SupportsReads,
+    SupportsWrites,
     SupportsBackupExports,
 ):
     """AniList target provider for the AniBridge provider contract."""
@@ -135,10 +136,10 @@ class AnilistProvider(
         return Capabilities(
             roles=frozenset({Role.TARGET}),
             facets=frozenset({FacetName.ARTWORK}),
-            nodes=(NodeSpec(Descriptor("anime", NodeKind.SERIES)),),
-            records=(
+            specs=(
+                NodeSpec(kind=Descriptor("anime", NodeKind.SERIES)),
                 RecordSpec(
-                    surface=_MEDIA_LIST_SURFACE,
+                    name=_MEDIA_LIST_SURFACE,
                     fields={
                         RecordField.STATUS: FieldSpec(
                             RecordField.STATUS,
@@ -196,7 +197,7 @@ class AnilistProvider(
                             constraints=(TextConstraint(max_length=1000),),
                         ),
                     },
-                    write_ops=frozenset({RecordWriteOp.UPSERT, RecordWriteOp.DELETE}),
+                    write_actions=frozenset({WriteAction.UPSERT, WriteAction.DELETE}),
                 ),
             ),
             external_authorities=frozenset({"anilist"}),
@@ -238,9 +239,17 @@ class AnilistProvider(
             )
         return tuple(matches)
 
-    async def fetch_nodes(self, query: NodeQuery) -> Page[Node]:
+    async def fetch(self, query: Query) -> Page[Node | Record | Event]:
+        """Fetch AniList nodes or records matching a typed query."""
+        if isinstance(query, NodeQuery):
+            return cast(Page[Node | Record | Event], await self._fetch_nodes(query))
+        if isinstance(query, RecordQuery):
+            return cast(Page[Node | Record | Event], await self._fetch_records(query))
+        return Page(items=())
+
+    async def _fetch_nodes(self, query: NodeQuery) -> Page[Node]:
         """Fetch AniList media metadata for targeted refs."""
-        if query.native_node_kinds and "anime" not in query.native_node_kinds:
+        if query.native_kinds and "anime" not in query.native_kinds:
             return Page(items=())
 
         media_ids: list[int] = []
@@ -282,12 +291,12 @@ class AnilistProvider(
             items=tuple(self._node_from_media(media, facets) for media in media_items)
         )
 
-    async def fetch_records(self, query: RecordQuery) -> Page[Record]:
+    async def _fetch_records(self, query: RecordQuery) -> Page[Record]:
         """Fetch AniList media-list records by ref or record key."""
         refs = tuple(query.refs)
         if not refs and query.keys:
             refs = tuple(Ref.anchor(key) for key in query.keys)
-        if query.record_surfaces and _MEDIA_LIST_SURFACE not in query.record_surfaces:
+        if query.native_kinds and _MEDIA_LIST_SURFACE not in query.native_kinds:
             return Page(items=())
 
         records: list[Record] = []
@@ -305,31 +314,35 @@ class AnilistProvider(
             records.append(self._record_from_media(media, query.fields))
         return Page(items=tuple(records))
 
-    async def write_records(
-        self,
-        writes: Sequence[RecordWrite],
-    ) -> Sequence[WriteResult]:
+    async def write(self, writes: Sequence[Write]) -> Sequence[WriteResult]:
         """Apply AniList record writes."""
         results: list[WriteResult] = []
         for write in writes:
             try:
                 if isinstance(write, UpsertRecord):
                     result = await self._upsert_record(write)
-                else:
+                elif (
+                    isinstance(write, Delete) and write.resource is ResourceKind.RECORD
+                ):
                     result = await self._delete_record(write)
+                else:
+                    result = WriteResult(
+                        ok=False,
+                        resource=write.resource,
+                        action=write.action,
+                        token=write.token,
+                        code=WriteError.UNSUPPORTED,
+                        error="AniList only supports record writes",
+                    )
             except Exception as exc:
-                op = (
-                    RecordWriteOp.DELETE
-                    if isinstance(write, DeleteRecord)
-                    else RecordWriteOp.UPSERT
-                )
                 result = WriteResult(
                     ok=False,
-                    op=op,
+                    resource=write.resource,
+                    action=write.action,
                     token=write.token,
                     code=self._write_error_for_exception(exc),
                     error=str(exc),
-                    ref=write.ref,
+                    ref=getattr(write, "ref", None),
                 )
             results.append(result)
         return tuple(results)
@@ -424,7 +437,8 @@ class AnilistProvider(
         if not changed_fields:
             return WriteResult(
                 ok=True,
-                op=RecordWriteOp.UPSERT,
+                resource=ResourceKind.RECORD,
+                action=WriteAction.UPSERT,
                 token=write.token,
                 ref=ref,
             )
@@ -437,20 +451,22 @@ class AnilistProvider(
         self._client._mark_list_cache_dirty()
         return WriteResult(
             ok=True,
-            op=RecordWriteOp.UPSERT,
+            resource=ResourceKind.RECORD,
+            action=WriteAction.UPSERT,
             token=write.token,
             key=str(saved.id),
             ref=write.ref,
             revision=str(saved.updated_at) if saved.updated_at is not None else None,
         )
 
-    async def _delete_record(self, write: DeleteRecord) -> WriteResult:
+    async def _delete_record(self, write: Delete) -> WriteResult:
         """Delete one AniList record."""
         ref = write.ref
         if ref is None:
             return WriteResult(
                 ok=False,
-                op=RecordWriteOp.DELETE,
+                resource=ResourceKind.RECORD,
+                action=WriteAction.DELETE,
                 token=write.token,
                 code=WriteError.INVALID,
                 error="AniList delete requires a ref",
@@ -460,14 +476,16 @@ class AnilistProvider(
         if entry is None:
             return WriteResult(
                 ok=True,
-                op=RecordWriteOp.DELETE,
+                resource=ResourceKind.RECORD,
+                action=WriteAction.DELETE,
                 token=write.token,
                 ref=ref,
             )
         deleted = await self._client.delete_anime_entry(entry.id, entry.media_id)
         return WriteResult(
             ok=bool(deleted),
-            op=RecordWriteOp.DELETE,
+            resource=ResourceKind.RECORD,
+            action=WriteAction.DELETE,
             token=write.token,
             ref=ref,
             key=str(entry.id),
