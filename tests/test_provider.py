@@ -82,11 +82,30 @@ async def test_fetch_nodes_returns_anilist_metadata(provider: AnilistProvider) -
 
 
 @pytest.mark.asyncio
-async def test_fetch_records_fetches_uncached_media(provider: AnilistProvider) -> None:
-    """Record reads should fall back to targeted media fetches on cache misses."""
-    page = await provider.fetch(RecordQuery(refs=(Ref.anchor("101"),)))
+async def test_fetch_records_fetches_uncached_media(
+    provider: AnilistProvider,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_client: Any,
+) -> None:
+    """Record reads should use batched targeted media fetches on cache misses."""
+    batch_calls: list[list[int]] = []
 
-    assert len(page.items) == 1
+    async def get_anime(_media_id: int) -> Any:
+        raise AssertionError("record reads should use batch_get_anime")
+
+    async def batch_get_anime(ids: list[int]) -> list[Any]:
+        batch_calls.append(ids)
+        return [fake_client.medias[media_id] for media_id in ids]
+
+    monkeypatch.setattr(fake_client, "get_anime", get_anime)
+    monkeypatch.setattr(fake_client, "batch_get_anime", batch_get_anime)
+
+    page = await provider.fetch(
+        RecordQuery(refs=(Ref.anchor("101"), Ref.anchor("202")))
+    )
+
+    assert batch_calls == [[101, 202]]
+    assert len(page.items) == 2
     record = cast(Record, page.items[0])
     assert record.ref == Ref.anchor("101")
     assert record.surface == "media_list"

@@ -299,19 +299,20 @@ class AnilistProvider(
         if query.native_kinds and _MEDIA_LIST_SURFACE not in query.native_kinds:
             return Page(items=())
 
-        records: list[Record] = []
+        media_ids: list[int] = []
         for ref in refs:
-            if query.limit is not None and len(records) >= query.limit:
+            if query.limit is not None and len(media_ids) >= query.limit:
                 break
             try:
-                media_id = int(ref.key)
+                media_ids.append(int(ref.key))
             except ValueError:
                 self.log.warning("Invalid AniList media ref %s", ref.key)
                 continue
 
-            media = await self._client.get_anime(media_id)
-
-            records.append(self._record_from_media(media, query.fields))
+        media_items = await self._client.batch_get_anime(media_ids)
+        records = [
+            self._record_from_media(media, query.fields) for media in media_items
+        ]
         return Page(items=tuple(records))
 
     async def write(self, writes: Sequence[Write]) -> Sequence[WriteResult]:
