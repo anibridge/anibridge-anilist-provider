@@ -9,6 +9,7 @@ from collections import defaultdict
 from collections.abc import AsyncIterator
 from datetime import UTC, timedelta, timezone, tzinfo
 from logging import Logger
+from types import SimpleNamespace
 from typing import Any, ClassVar, cast
 
 import aiohttp
@@ -32,6 +33,26 @@ from anibridge.providers.anilist.models import (
 __all__ = ["AnilistClient"]
 
 _ANILIST_PACKAGE_NAME = "anibridge-anilist-provider"
+
+
+class _NonRetryableResponseError(aiohttp.ClientResponseError):
+    """HTTP response error that should not enter the client retry loop."""
+
+
+def _response_error(
+    response: aiohttp.ClientResponse, message: str
+) -> _NonRetryableResponseError:
+    request_info = getattr(response, "request_info", None) or SimpleNamespace(
+        real_url=getattr(response, "url", "unknown")
+    )
+    return _NonRetryableResponseError(
+        request_info=cast(Any, request_info),
+        history=getattr(response, "history", ()),
+        status=response.status,
+        message=message,
+        headers=response.headers,
+    )
+
 
 global_anilist_limiter = Limiter(30 / 60, capacity=4)
 
@@ -685,9 +706,10 @@ class AnilistClient:
                 ) as response:
                     if response.status in non_retryable_statuses:
                         clean_query = " ".join(query.split())
-                        raise aiohttp.ClientError(
+                        raise _response_error(
+                            response,
                             non_retryable_statuses[response.status]
-                            + f"; query={clean_query}; variables={variables}"
+                            + f"; query={clean_query}; variables={variables}",
                         )
 
                     if response.status == 429:
@@ -705,14 +727,17 @@ class AnilistClient:
                             await asyncio.sleep(delay)
                             continue
 
-                        raise aiohttp.ClientError(
+                        raise _response_error(
+                            response,
                             f"AniList API rate limited (429) after {max_attempts} "
-                            "attempts"
+                            "attempts",
                         )
 
                     response.raise_for_status()
                     return await response.json()
 
+            except _NonRetryableResponseError:
+                raise
             except (
                 TimeoutError,
                 aiohttp.ClientConnectionError,
